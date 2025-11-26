@@ -72,7 +72,7 @@ class PokemonDataLoader:
             # Default to data/pokemon_cleaned.csv relative to project root
             import os
             from pathlib import Path
-            project_root = Path(__file__).parent.parent.parent
+            project_root = Path(__file__).parent.parent
             csv_file = str(project_root / "data" / "pokemon_cleaned.csv")
         self.csv_file = csv_file
         self.pokemon_db: Dict[str, Pokemon] = {}

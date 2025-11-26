@@ -9,7 +9,7 @@ import random
 from enum import Enum
 from dataclasses import dataclass
 from typing import Optional, Dict, Tuple
-from .game_data import Pokemon, PokemonDataLoader, Move
+from game_data import Pokemon, PokemonDataLoader, Move
 
 
 class BattleState(Enum):
@@ -335,6 +335,10 @@ class BattleStateMachine:
             # Opponent attacked my Pokémon
             damage = calculation["damage_dealt"]
             self.my_pokemon.take_damage(damage)
+        
+        # Check for game over after applying damage
+        if self.my_pokemon.is_fainted() or self.opponent_pokemon.is_fainted():
+            self.advance_to_game_over()
     
     def get_current_state_info(self) -> str:
         """

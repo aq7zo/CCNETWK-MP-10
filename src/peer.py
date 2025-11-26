@@ -15,9 +15,24 @@ import time
 import random
 from typing import Optional, Callable, Tuple, List, Dict, Deque
 from collections import deque
-from .game_data import PokemonDataLoader, Pokemon, MoveDatabase, Move
-from .messages import Message, MessageType, Ack, HandshakeResponse
-from .battle import BattleStateMachine, BattleState, BattlePokemon, DamageCalculator
+from game_data import PokemonDataLoader, Pokemon, MoveDatabase, Move
+from messages import Message, MessageType, Ack, HandshakeResponse
+from battle import BattleStateMachine, BattleState, BattlePokemon, DamageCalculator
+
+# Import debug system
+try:
+    from debug import get_debug_logger, DebugLevel
+    DEBUG_ENABLED = True
+except ImportError:
+    DEBUG_ENABLED = False
+    def get_debug_logger():
+        class DummyLogger:
+            def log(self, *args, **kwargs): pass
+            def log_message(self, *args, **kwargs): pass
+            def log_state_transition(self, *args, **kwargs): pass
+            def log_error(self, *args, **kwargs): pass
+            def log_warning(self, *args, **kwargs): pass
+        return DummyLogger()
 
 
 # ============================================================================
@@ -253,17 +268,23 @@ class BasePeer:
     - Chat message handling
     """
     
-    def __init__(self, port: int = 8888):
+    def __init__(self, port: int = 8888, debug: bool = False):
         """
         Initialize the base peer.
         
         Args:
             port: UDP port to listen on
+            debug: Enable debug logging
         """
         self.port = port
         self.socket = None
         self.peer_address: Optional[Tuple[str, int]] = None
         self.reliability = ReliabilityLayer()
+        
+        # Debug logging
+        self.debug = debug
+        self.debug_logger = get_debug_logger(enabled=debug, level=DebugLevel.DEBUG if DEBUG_ENABLED else DebugLevel.NONE)
+        self.peer_type = self.__class__.__name__.replace('Peer', '').lower()
         
         # Data management
         self.pokemon_loader = PokemonDataLoader()
@@ -273,11 +294,16 @@ class BasePeer:
         # State
         self.connected = False
         self.battle_seed: Optional[int] = None
+        self.opponent_wants_rematch: Optional[bool] = None
         
         # Callbacks
         self.on_chat_message: Optional[Callable[[str, str], None]] = None
         self.on_sticker_received: Optional[Callable[[str, str], None]] = None
         self.on_battle_update: Optional[Callable[[str], None]] = None
+        
+        if self.debug:
+            self.debug_logger.log(DebugLevel.INFO, 'INIT', f"Initialized {self.peer_type} peer on port {port}", 
+                                 {'port': port}, self.peer_type)
     
     def start_listening(self, enable_broadcast: bool = False):
         """
@@ -375,6 +401,16 @@ class BasePeer:
         # Serialize and send
         data = message.serialize()
         self._send_datagram(data, broadcast_address)
+        
+        # Debug logging
+        if self.debug:
+            self.debug_logger.log_message(
+                'SEND',
+                message.message_type.value if hasattr(message.message_type, 'value') else str(message.message_type),
+                seq_num,
+                self.peer_type,
+                {'address': str(broadcast_address), 'message_size': len(data)}
+            )
 
         return seq_num
     
@@ -407,8 +443,31 @@ class BasePeer:
             if ready:
                 data, address = self.socket.recvfrom(4096)
                 message = Message.deserialize(data)
+                
+                msg_type = message.message_type.value if hasattr(message.message_type, 'value') else str(message.message_type)
+                seq_num = getattr(message, 'sequence_number', None)
+                print(f"[DEBUG] {self.peer_type.upper()} received: {msg_type}, seq={seq_num}, from={address}")
+                
+                # Debug logging
+                if self.debug:
+                    self.debug_logger.log_message(
+                        'RECEIVE',
+                        msg_type,
+                        seq_num,
+                        self.peer_type,
+                        {'address': str(address), 'message_size': len(data)}
+                    )
+                
                 return message, address
+        except OSError as e:
+            # Handle network errors gracefully (connection closed, etc.)
+            if "10054" not in str(e):  # Don't spam for "connection forcibly closed"
+                print(f"Error receiving message: {e}")
+            return None
         except Exception as e:
+            if self.debug:
+                self.debug_logger.log_error('RECEIVE_ERROR', f"Error receiving message: {e}", 
+                                          self.peer_type, e, {'timeout': timeout})
             print(f"Error receiving message: {e}")
         
         return None
@@ -421,6 +480,11 @@ class BasePeer:
             message: Received message
             address: Sender's address
         """
+        if self.debug:
+            self.debug_logger.log(DebugLevel.VERBOSE, 'HANDLER', 
+                                 f"Handling {message.message_type.value if hasattr(message.message_type, 'value') else message.message_type}",
+                                 {'address': str(address)}, self.peer_type)
+        
         # Handle ACK
         if message.message_type == MessageType.ACK:
             self.reliability.receive_ack(message.ack_number)
@@ -432,6 +496,9 @@ class BasePeer:
             
             # Check for duplicates
             if self.reliability.is_duplicate(message.sequence_number):
+                if self.debug:
+                    self.debug_logger.log_warning("Duplicate message detected", self.peer_type,
+                                                 {'sequence_number': message.sequence_number})
                 return
             self.reliability.mark_received(message.sequence_number)
         
@@ -501,7 +568,7 @@ class BasePeer:
             sender_name: Name of sender
             message_text: Message content
         """
-        from .messages import ChatMessage
+        from messages import ChatMessage
 
         chat_msg = ChatMessage(
             sender_name=sender_name,
@@ -525,7 +592,7 @@ class BasePeer:
         if not self._validate_sticker(sticker_data):
             raise ValueError("Invalid sticker data: must be valid Base64 and under 10MB")
 
-        from .messages import ChatMessage
+        from messages import ChatMessage
 
         chat_msg = ChatMessage(
             sender_name=sender_name,
@@ -539,7 +606,15 @@ class BasePeer:
         # Check for messages needing retransmission
         retransmissions = self.reliability.check_retransmissions()
         for seq_num, message in retransmissions:
-            self.send_message(message)
+            # Retransmit with ORIGINAL sequence number (don't create new one)
+            target = self.peer_address
+            if target:
+                # Ensure message has the original sequence number
+                if hasattr(message, 'sequence_number'):
+                    message.sequence_number = seq_num
+                data = message.serialize()
+                self._send_datagram(data, target)
+                print(f"[DEBUG] {self.peer_type.upper()} retransmitting {message.message_type.value if hasattr(message.message_type, 'value') else message.message_type}, seq={seq_num}")
         
         # Cleanup old ACKs
         self.reliability.cleanup_old_acks()
@@ -570,14 +645,15 @@ class HostPeer(BasePeer):
     from joiner peers. The host goes first in battles.
     """
     
-    def __init__(self, port: int = 8888):
+    def __init__(self, port: int = 8888, debug: bool = False):
         """
         Initialize host peer.
 
         Args:
             port: Port to listen on
+            debug: Enable debug logging
         """
-        super().__init__(port)
+        super().__init__(port, debug=debug)
         self.battle_state: Optional[BattleStateMachine] = None
         self.my_pokemon: Optional[BattlePokemon] = None
         self.my_stat_boosts = {"special_attack_uses": 5, "special_defense_uses": 5}
@@ -597,17 +673,22 @@ class HostPeer(BasePeer):
             message: Battle message
             address: Sender address
         """
+        print(f"[DEBUG] Host _handle_battle_message: {message.message_type.value if hasattr(message.message_type, 'value') else message.message_type}, from={address}, connected={self.connected}")
+        
         if not self.connected:
             self.peer_address = address
         
+        # Handle connection requests (always, even if already connected to joiner)
         if message.message_type == MessageType.HANDSHAKE_REQUEST:
             self._handle_handshake_request(message, address)
         elif message.message_type == MessageType.SPECTATOR_REQUEST:
+            # Spectators can join at any time, even during battle
             self._handle_spectator_request(message, address)
         elif self.connected:
             if message.message_type == MessageType.BATTLE_SETUP:
                 self._handle_battle_setup(message)
             elif message.message_type == MessageType.ATTACK_ANNOUNCE:
+                print(f"[DEBUG] Host routing ATTACK_ANNOUNCE to handler")
                 self._handle_attack_announce(message)
             elif message.message_type == MessageType.DEFENSE_ANNOUNCE:
                 self._handle_defense_announce(message)
@@ -619,6 +700,8 @@ class HostPeer(BasePeer):
                 self._handle_resolution_request(message)
             elif message.message_type == MessageType.GAME_OVER:
                 self._handle_game_over(message)
+            elif message.message_type == MessageType.REMATCH_REQUEST:
+                self._handle_rematch_request(message)
     
     def _handle_handshake_request(self, message: Message, address: Tuple[str, int]):
         """Handle connection request from joiner."""
@@ -643,12 +726,18 @@ class HostPeer(BasePeer):
             message: Spectator request message
             address: Spectator's address
         """
+        print(f"[DEBUG] Host received SPECTATOR_REQUEST from {address}")
         if address not in self.spectators:
             self.spectators.append(address)
-            # Send battle seed to spectator for synchronization
-            response = HandshakeResponse(self.battle_seed if self.battle_seed else 0)
-            self.send_message(response, address)
-            print(f"Spectator joined from {address}")
+            print(f"[DEBUG] Host: Added spectator {address} to list (total: {len(self.spectators)})")
+        
+        # Send battle seed to spectator for synchronization (always send, even if already in list)
+        seed = self.battle_seed if self.battle_seed else 0
+        response = HandshakeResponse(seed, sequence_number=self.reliability.get_next_sequence_number())
+        self.send_message(response, address)
+        print(f"[DEBUG] Host sent HANDSHAKE_RESPONSE to spectator {address} with seed {seed}, seq={response.sequence_number}")
+        if address not in self.spectators or len(self.spectators) == 1:
+            print(f"✓ Spectator joined from {address}")
 
     def _broadcast_to_spectators(self, message: Message):
         """
@@ -665,62 +754,96 @@ class HostPeer(BasePeer):
 
     def _handle_battle_setup(self, message: Message):
         """Handle opponent's battle setup."""
-        if self.battle_state and self.battle_state.state == BattleState.SETUP:
-            # Use pokemon_data if provided, otherwise load from CSV
-            if message.pokemon_data:
-                opponent_pokemon = Pokemon(**message.pokemon_data)
-            else:
-                opponent_pokemon = self.pokemon_loader.get_pokemon(message.pokemon_name)
+        # Only process if we're still in SETUP state (ignore duplicates/retransmissions)
+        if not self.battle_state or self.battle_state.state != BattleState.SETUP:
+            return
+            
+        # Use pokemon_data if provided, otherwise load from CSV
+        if message.pokemon_data:
+            opponent_pokemon = Pokemon(**message.pokemon_data)
+        else:
+            opponent_pokemon = self.pokemon_loader.get_pokemon(message.pokemon_name)
 
-            if opponent_pokemon:
-                self.battle_state.set_opponent_pokemon(
-                    opponent_pokemon,
-                    message.stat_boosts.get("special_attack_uses", 5),
-                    message.stat_boosts.get("special_defense_uses", 5)
-                )
-                self.battle_state.advance_to_waiting()
-                print(f"Opponent chose {message.pokemon_name}")
+        if opponent_pokemon:
+            self.battle_state.set_opponent_pokemon(
+                opponent_pokemon,
+                message.stat_boosts.get("special_attack_uses", 5),
+                message.stat_boosts.get("special_defense_uses", 5)
+            )
+            self.battle_state.advance_to_waiting()
+            print(f"Opponent chose {message.pokemon_name}")
     
     def _handle_attack_announce(self, message: Message):
         """Handle opponent's attack announcement."""
-        if self.battle_state and self.battle_state.state == BattleState.WAITING_FOR_MOVE:
-            move = self.move_db.get_move(message.move_name)
-            if move:
-                self.battle_state.last_move = move
-                self.battle_state.last_attacker = message.move_name
-                
-                # Send defense announce
-                from .messages import DefenseAnnounce
-                defense = DefenseAnnounce(self.reliability.get_next_sequence_number())
-                self.send_message(defense)
-                
-                # Advance to processing and calculate
-                self.battle_state.advance_to_processing(move, self.battle_state.opponent_pokemon.pokemon.name)
-                
-                # Calculate damage
-                outcome = self.damage_calculator.calculate_turn_outcome(
-                    self.battle_state.opponent_pokemon.pokemon,
-                    self.my_pokemon.pokemon,
-                    self.battle_state.opponent_pokemon.current_hp,
-                    self.my_pokemon.current_hp,
-                    move
-                )
-                
-                self.battle_state.record_my_calculation(outcome)
-                self.battle_state.apply_calculation(outcome)
-                
-                # Send calculation report
-                from .messages import CalculationReport
-                report = CalculationReport(
-                    self.battle_state.opponent_pokemon.pokemon.name,
-                    outcome["move_used"],
-                    outcome.get("attacker_hp", self.battle_state.opponent_pokemon.current_hp),
-                    outcome["damage_dealt"],
-                    outcome["defender_hp_remaining"],
-                    outcome["status_message"],
-                    self.reliability.get_next_sequence_number()
-                )
-                self.send_message(report)
+        print(f"[DEBUG] Host _handle_attack_announce: {message.move_name}, state={self.battle_state.state.value if self.battle_state else 'None'}, connected={self.connected}")
+        
+        if not self.battle_state:
+            print(f"[DEBUG] Host: No battle state, ignoring AttackAnnounce")
+            return
+            
+        if self.battle_state.state != BattleState.WAITING_FOR_MOVE:
+            print(f"[DEBUG] Host: Wrong state for AttackAnnounce! Expected WAITING_FOR_MOVE, got {self.battle_state.state.value}")
+            return
+            
+        move = self.move_db.get_move(message.move_name)
+        if not move:
+            print(f"[DEBUG] Host: Move not found: {message.move_name}")
+            return
+            
+        print(f"[DEBUG] Host: Processing AttackAnnounce, sending DefenseAnnounce...")
+        self.battle_state.last_move = move
+        self.battle_state.last_attacker = message.move_name
+        
+        # Broadcast AttackAnnounce to spectators
+        self._broadcast_to_spectators(message)
+        
+        # Send defense announce
+        from messages import DefenseAnnounce
+        defense = DefenseAnnounce(self.reliability.get_next_sequence_number())
+        self.send_message(defense)
+        print(f"[DEBUG] Host sent DefenseAnnounce, seq={defense.sequence_number}")
+        # Broadcast DefenseAnnounce to spectators
+        self._broadcast_to_spectators(defense)
+        
+        # Advance to processing and calculate
+        self.battle_state.advance_to_processing(move, self.battle_state.opponent_pokemon.pokemon.name)
+        
+        # Calculate damage
+        outcome = self.damage_calculator.calculate_turn_outcome(
+            self.battle_state.opponent_pokemon.pokemon,
+            self.my_pokemon.pokemon,
+            self.battle_state.opponent_pokemon.current_hp,
+            self.my_pokemon.current_hp,
+            move
+        )
+        
+        self.battle_state.record_my_calculation(outcome)
+        self.battle_state.apply_calculation(outcome)
+        
+        # Check for game over
+        if self.battle_state.is_game_over():
+            winner = self.battle_state.get_winner()
+            loser = self.battle_state.opponent_pokemon.pokemon.name if winner == self.my_pokemon.pokemon.name else self.my_pokemon.pokemon.name
+            from messages import GameOver
+            game_over_msg = GameOver(winner, loser, self.reliability.get_next_sequence_number())
+            self.send_message(game_over_msg)
+            # Broadcast to spectators
+            self._broadcast_to_spectators(game_over_msg)
+        
+        # Send calculation report
+        from messages import CalculationReport
+        report = CalculationReport(
+            self.battle_state.opponent_pokemon.pokemon.name,
+            outcome["move_used"],
+            outcome.get("attacker_hp", self.battle_state.opponent_pokemon.current_hp),
+            outcome["damage_dealt"],
+            outcome["defender_hp_remaining"],
+            outcome["status_message"],
+            self.reliability.get_next_sequence_number()
+        )
+        self.send_message(report)
+        # Broadcast to spectators
+        self._broadcast_to_spectators(report)
     
     def start_battle(self, pokemon_name: str, special_attack_uses: int = 5,
                     special_defense_uses: int = 5):
@@ -752,34 +875,108 @@ class HostPeer(BasePeer):
         
         # Send battle setup
         if self.peer_address:
-            from .messages import BattleSetup
+            from messages import BattleSetup
             from dataclasses import asdict
             pokemon_data = asdict(pokemon) if pokemon else None
             setup_msg = BattleSetup("P2P", pokemon_name, self.my_stat_boosts, pokemon_data=pokemon_data)
             self.send_message(setup_msg)
             self.connected = True
+            # Broadcast to spectators
+            self._broadcast_to_spectators(setup_msg)
     
     def _handle_defense_announce(self, message: Message):
-        """Handle defense announcement (not needed for host)."""
-        pass
+        """Handle defense announcement after sending attack."""
+        print(f"[DEBUG] Host received DefenseAnnounce, state={self.battle_state.state.value if self.battle_state else 'None'}, last_move={self.battle_state.last_move.name if (self.battle_state and self.battle_state.last_move) else 'None'}")
+        
+        # When host sends attack and receives defense announce, calculate and send report
+        if not self.battle_state:
+            print(f"[DEBUG] Host: No battle state!")
+            return
+            
+        # Check if we're processing our own attack (we sent AttackAnnounce, now got DefenseAnnounce)
+        if (self.battle_state.state == BattleState.PROCESSING_TURN and
+            self.battle_state.last_move):
+            
+            move = self.battle_state.last_move
+            print(f"[DEBUG] Host: Processing DefenseAnnounce, calculating damage...")
+            
+            # Calculate damage
+            outcome = self.damage_calculator.calculate_turn_outcome(
+                self.my_pokemon.pokemon,
+                self.battle_state.opponent_pokemon.pokemon,
+                self.my_pokemon.current_hp,
+                self.battle_state.opponent_pokemon.current_hp,
+                move
+            )
+            
+            self.battle_state.record_my_calculation(outcome)
+            self.battle_state.apply_calculation(outcome)
+            
+            # Display damage calculation
+            print(f"\n{outcome['status_message']}")
+            print(f"{self.battle_state.get_battle_status()}")
+            
+            # Check for game over
+            if self.battle_state.is_game_over():
+                winner = self.battle_state.get_winner()
+                loser = self.battle_state.opponent_pokemon.pokemon.name if winner == self.my_pokemon.pokemon.name else self.my_pokemon.pokemon.name
+                from messages import GameOver
+                game_over_msg = GameOver(winner, loser, self.reliability.get_next_sequence_number())
+                self.send_message(game_over_msg)
+                # Broadcast to spectators
+                self._broadcast_to_spectators(game_over_msg)
+            
+            # Send calculation report
+            from messages import CalculationReport
+            report = CalculationReport(
+                outcome["attacker"],
+                outcome["move_used"],
+                outcome.get("attacker_hp", self.my_pokemon.current_hp),
+                outcome["damage_dealt"],
+                outcome["defender_hp_remaining"],
+                outcome["status_message"],
+                self.reliability.get_next_sequence_number()
+            )
+            self.send_message(report)
+            # Broadcast to spectators
+            self._broadcast_to_spectators(report)
     
     def _handle_calculation_report(self, message: Message):
         """Handle opponent's calculation report."""
+        print(f"[DEBUG] Host received CalculationReport, state={self.battle_state.state.value if self.battle_state else 'None'}, damage={message.damage_dealt if hasattr(message, 'damage_dealt') else 'N/A'}")
+        
+        # Broadcast to spectators
+        self._broadcast_to_spectators(message)
+        
         if self.battle_state and self.battle_state.state == BattleState.PROCESSING_TURN:
             self.battle_state.record_opponent_calculation({
                 "damage_dealt": message.damage_dealt,
                 "defender_hp_remaining": message.defender_hp_remaining
             })
+            print(f"[DEBUG] Host: Recorded opponent calculation, checking match...")
             
             # Check if calculations match
             if self.battle_state.calculations_match():
-                from .messages import CalculationConfirm
+                print(f"[DEBUG] Host: Calculations match! Sending confirm...")
+                from messages import CalculationConfirm
                 confirm = CalculationConfirm(message.sequence_number)
                 self.send_message(confirm)
                 self.battle_state.advance_to_complete()
+                
+                # Check for game over after turn completes
+                if self.battle_state.is_game_over():
+                    winner = self.battle_state.get_winner()
+                    loser = self.battle_state.opponent_pokemon.pokemon.name if winner == self.my_pokemon.pokemon.name else self.my_pokemon.pokemon.name
+                    from messages import GameOver
+                    game_over_msg = GameOver(winner, loser, self.reliability.get_next_sequence_number())
+                    self.send_message(game_over_msg)
+                else:
+                    # Show updated status after turn completes
+                    print(f"\nTurn complete! {self.battle_state.get_battle_status()}")
             else:
                 # Discrepancy - send resolution request
-                from .messages import ResolutionRequest
+                print(f"\n⚠ Calculation mismatch detected! Resolving...")
+                from messages import ResolutionRequest
                 resolution = ResolutionRequest(
                     self.battle_state.last_attacker,
                     message.move_used,
@@ -793,7 +990,21 @@ class HostPeer(BasePeer):
         """Handle calculation confirmation."""
         if self.battle_state:
             self.battle_state.mark_calculation_confirmed()
-            self.battle_state.advance_to_complete()
+            # Only advance if we're still processing the OPPONENT's turn (not our own)
+            # If my_turn=True, we're processing our own attack, so don't advance
+            if self.battle_state.state == BattleState.PROCESSING_TURN and not self.battle_state.my_turn:
+                self.battle_state.advance_to_complete()
+                
+                # Check for game over after turn completes
+                if self.battle_state.is_game_over():
+                    winner = self.battle_state.get_winner()
+                    loser = self.battle_state.opponent_pokemon.pokemon.name if winner == self.my_pokemon.pokemon.name else self.my_pokemon.pokemon.name
+                    from messages import GameOver
+                    game_over_msg = GameOver(winner, loser, self.reliability.get_next_sequence_number())
+                    self.send_message(game_over_msg)
+                else:
+                    # Show updated status after turn completes
+                    print(f"\nTurn complete! {self.battle_state.get_battle_status()}")
     
     def _handle_resolution_request(self, message: Message):
         """Handle resolution request from opponent."""
@@ -808,9 +1019,28 @@ class HostPeer(BasePeer):
     
     def _handle_game_over(self, message: Message):
         """Handle game over message."""
+        # Broadcast to spectators
+        self._broadcast_to_spectators(message)
+        
         if self.battle_state:
             self.battle_state.advance_to_game_over()
-            print(f"Game Over! {message.winner} wins!")
+            print(f"\n" + "="*60)
+            print(f"  GAME OVER!")
+            print(f"  Winner: {message.winner}")
+            print(f"  Loser: {message.loser}")
+            print("="*60)
+    
+    def _handle_rematch_request(self, message: Message):
+        """Handle rematch request from opponent."""
+        # Broadcast to spectators
+        self._broadcast_to_spectators(message)
+        
+        # Store opponent's rematch decision
+        self.opponent_wants_rematch = message.wants_rematch
+        if message.wants_rematch:
+            print(f"\nOpponent wants a rematch!")
+        else:
+            print(f"\nOpponent does not want a rematch.")
     
     def use_move(self, move_name: str):
         """
@@ -829,7 +1059,7 @@ class HostPeer(BasePeer):
             return
         
         # Send attack announcement
-        from .messages import AttackAnnounce, DefenseAnnounce, CalculationReport
+        from messages import AttackAnnounce, DefenseAnnounce, CalculationReport
         announce = AttackAnnounce(
             move.name,
             self.reliability.get_next_sequence_number()
@@ -894,9 +1124,15 @@ class JoinerPeer(BasePeer):
     Connects to a host peer and joins an existing battle.
     """
     
-    def __init__(self, port: int = 8889):
-        """Initialize joiner peer."""
-        super().__init__(port)
+    def __init__(self, port: int = 8889, debug: bool = False):
+        """
+        Initialize joiner peer.
+        
+        Args:
+            port: Port to listen on
+            debug: Enable debug logging
+        """
+        super().__init__(port, debug=debug)
         self.battle_state: Optional[BattleStateMachine] = None
         self.my_pokemon: Optional[BattlePokemon] = None
         self.my_stat_boosts = {"special_attack_uses": 5, "special_defense_uses": 5}
@@ -916,7 +1152,7 @@ class JoinerPeer(BasePeer):
         self.battle_state = BattleStateMachine(is_host=False)
         
         # Send handshake request
-        from .messages import HandshakeRequest
+        from messages import HandshakeRequest
         request = HandshakeRequest()
         self.send_message(request, self.peer_address)
         
@@ -969,7 +1205,7 @@ class JoinerPeer(BasePeer):
         
         # Send battle setup
         if self.peer_address:
-            from .messages import BattleSetup
+            from messages import BattleSetup
             from dataclasses import asdict
             pokemon_data = asdict(pokemon) if pokemon else None
             setup = BattleSetup("P2P", pokemon_name, self.my_stat_boosts, pokemon_data=pokemon_data)
@@ -977,13 +1213,21 @@ class JoinerPeer(BasePeer):
     
     def _handle_battle_message(self, message: Message, address: Tuple[str, int]):
         """Handle battle messages."""
+        msg_type = message.message_type.value if hasattr(message.message_type, 'value') else str(message.message_type)
+        seq_num = getattr(message, 'sequence_number', None)
+        print(f"[DEBUG] Joiner _handle_battle_message: {msg_type}, seq={seq_num}, connected={self.connected}, state={self.battle_state.state.value if self.battle_state else 'None'}")
+        
         if not self.connected:
+            print(f"[DEBUG] Not connected, ignoring message")
             return
         
         if message.message_type == MessageType.BATTLE_SETUP:
             self._handle_battle_setup(message)
         elif message.message_type == MessageType.ATTACK_ANNOUNCE:
+            print(f"[DEBUG] Routing ATTACK_ANNOUNCE to handler")
             self._handle_attack_announce(message)
+        elif message.message_type == MessageType.DEFENSE_ANNOUNCE:
+            self._handle_defense_announce(message)
         elif message.message_type == MessageType.CALCULATION_REPORT:
             self._handle_calculation_report(message)
         elif message.message_type == MessageType.CALCULATION_CONFIRM:
@@ -992,85 +1236,204 @@ class JoinerPeer(BasePeer):
             self._handle_resolution_request(message)
         elif message.message_type == MessageType.GAME_OVER:
             self._handle_game_over(message)
+        elif message.message_type == MessageType.REMATCH_REQUEST:
+            self._handle_rematch_request(message)
     
     def _handle_battle_setup(self, message: Message):
         """Handle opponent's battle setup."""
-        if self.battle_state and self.battle_state.state == BattleState.SETUP:
-            # Use pokemon_data if provided, otherwise load from CSV
-            if message.pokemon_data:
-                opponent_pokemon = Pokemon(**message.pokemon_data)
-            else:
-                opponent_pokemon = self.pokemon_loader.get_pokemon(message.pokemon_name)
+        # Only process if we're still in SETUP state (ignore duplicates/retransmissions)
+        if not self.battle_state or self.battle_state.state != BattleState.SETUP:
+            return
+            
+        # Use pokemon_data if provided, otherwise load from CSV
+        if message.pokemon_data:
+            opponent_pokemon = Pokemon(**message.pokemon_data)
+        else:
+            opponent_pokemon = self.pokemon_loader.get_pokemon(message.pokemon_name)
 
-            if opponent_pokemon:
-                self.battle_state.set_opponent_pokemon(
-                    opponent_pokemon,
-                    message.stat_boosts.get("special_attack_uses", 5),
-                    message.stat_boosts.get("special_defense_uses", 5)
-                )
-                self.battle_state.advance_to_waiting()
-                print(f"Opponent chose {message.pokemon_name}")
+        if opponent_pokemon:
+            self.battle_state.set_opponent_pokemon(
+                opponent_pokemon,
+                message.stat_boosts.get("special_attack_uses", 5),
+                message.stat_boosts.get("special_defense_uses", 5)
+            )
+            self.battle_state.advance_to_waiting()
+            print(f"Opponent chose {message.pokemon_name}")
     
     def _handle_attack_announce(self, message: Message):
         """Handle opponent's attack announcement."""
-        if self.battle_state and self.battle_state.state == BattleState.WAITING_FOR_MOVE:
-            move = self.move_db.get_move(message.move_name)
-            if move:
-                self.battle_state.last_move = move
-                self.battle_state.last_attacker = message.move_name  # Should be attacker name
-                
-                # Send defense announce
-                from .messages import DefenseAnnounce
-                defense = DefenseAnnounce(self.reliability.get_next_sequence_number())
-                self.send_message(defense)
-                
-                # Advance to processing and calculate
-                self.battle_state.advance_to_processing(move, self.battle_state.opponent_pokemon.pokemon.name)
-                
-                # Calculate damage
-                outcome = self.damage_calculator.calculate_turn_outcome(
-                    self.battle_state.opponent_pokemon.pokemon,
-                    self.my_pokemon.pokemon,
-                    self.battle_state.opponent_pokemon.current_hp,
-                    self.my_pokemon.current_hp,
-                    move
-                )
-                
-                self.battle_state.record_my_calculation(outcome)
-                self.battle_state.apply_calculation(outcome)
-                
-                # Send calculation report
-                from .messages import CalculationReport
-                report = CalculationReport(
-                    self.battle_state.opponent_pokemon.pokemon.name,
-                    outcome["move_used"],
-                    outcome.get("attacker_hp", self.battle_state.opponent_pokemon.current_hp),
-                    outcome["damage_dealt"],
-                    outcome["defender_hp_remaining"],
-                    outcome["status_message"],
-                    self.reliability.get_next_sequence_number()
-                )
-                self.send_message(report)
+        if not self.battle_state:
+            return
+            
+        if self.battle_state.state != BattleState.WAITING_FOR_MOVE:
+            return
+            
+        move = self.move_db.get_move(message.move_name)
+        if not move:
+            return
+            
+        self.battle_state.last_move = move
+        self.battle_state.last_attacker = message.move_name  # Should be attacker name
+        
+        # Send defense announce
+        from messages import DefenseAnnounce
+        defense = DefenseAnnounce(self.reliability.get_next_sequence_number())
+        self.send_message(defense)
+        
+        # Advance to processing and calculate
+        self.battle_state.advance_to_processing(move, self.battle_state.opponent_pokemon.pokemon.name)
+        
+        # Calculate damage
+        outcome = self.damage_calculator.calculate_turn_outcome(
+            self.battle_state.opponent_pokemon.pokemon,
+            self.my_pokemon.pokemon,
+            self.battle_state.opponent_pokemon.current_hp,
+            self.my_pokemon.current_hp,
+            move
+        )
+        
+        self.battle_state.record_my_calculation(outcome)
+        self.battle_state.apply_calculation(outcome)
+        
+        # Display damage calculation
+        print(f"\nOpponent used {move.name}!")
+        print(f"{outcome['status_message']}")
+        print(f"{self.battle_state.get_battle_status()}")
+        
+        # Check for game over
+        if self.battle_state.is_game_over():
+            winner = self.battle_state.get_winner()
+            loser = self.battle_state.opponent_pokemon.pokemon.name if winner == self.my_pokemon.pokemon.name else self.my_pokemon.pokemon.name
+            from messages import GameOver
+            game_over_msg = GameOver(winner, loser, self.reliability.get_next_sequence_number())
+            self.send_message(game_over_msg)
+        
+        # Send calculation report
+        from messages import CalculationReport
+        report = CalculationReport(
+            self.battle_state.opponent_pokemon.pokemon.name,
+            outcome["move_used"],
+            outcome.get("attacker_hp", self.battle_state.opponent_pokemon.current_hp),
+            outcome["damage_dealt"],
+            outcome["defender_hp_remaining"],
+            outcome["status_message"],
+            self.reliability.get_next_sequence_number()
+        )
+        self.send_message(report)
+        print(f"[DEBUG] Sent CalculationReport")
+    
+    def _handle_defense_announce(self, message: Message):
+        """Handle defense announcement after sending attack."""
+        print(f"[DEBUG] Joiner _handle_defense_announce: state={self.battle_state.state.value if self.battle_state else 'None'}, last_move={self.battle_state.last_move.name if (self.battle_state and self.battle_state.last_move) else 'None'}, my_turn={self.battle_state.my_turn if self.battle_state else 'None'}")
+        
+        # When joiner sends attack and receives defense announce, calculate and send report
+        if not self.battle_state:
+            print(f"[DEBUG] Joiner: No battle state!")
+            return
+            
+        # Check if we're processing our own attack (we sent AttackAnnounce, now got DefenseAnnounce)
+        if (self.battle_state.state == BattleState.PROCESSING_TURN and
+            self.battle_state.last_move):
+            print(f"[DEBUG] Joiner: Processing DefenseAnnounce for our attack")
+            
+            move = self.battle_state.last_move
+            
+            # Calculate damage
+            outcome = self.damage_calculator.calculate_turn_outcome(
+                self.my_pokemon.pokemon,
+                self.battle_state.opponent_pokemon.pokemon,
+                self.my_pokemon.current_hp,
+                self.battle_state.opponent_pokemon.current_hp,
+                move
+            )
+            
+            self.battle_state.record_my_calculation(outcome)
+            self.battle_state.apply_calculation(outcome)
+            
+            # Display damage calculation
+            print(f"\n{outcome['status_message']}")
+            print(f"{self.battle_state.get_battle_status()}")
+            
+            # Check for game over
+            if self.battle_state.is_game_over():
+                winner = self.battle_state.get_winner()
+                loser = self.battle_state.opponent_pokemon.pokemon.name if winner == self.my_pokemon.pokemon.name else self.my_pokemon.pokemon.name
+                from messages import GameOver
+                game_over_msg = GameOver(winner, loser, self.reliability.get_next_sequence_number())
+                self.send_message(game_over_msg)
+            
+            # Send calculation report
+            from messages import CalculationReport
+            report = CalculationReport(
+                outcome["attacker"],
+                outcome["move_used"],
+                outcome.get("attacker_hp", self.my_pokemon.current_hp),
+                outcome["damage_dealt"],
+                outcome["defender_hp_remaining"],
+                outcome["status_message"],
+                self.reliability.get_next_sequence_number()
+            )
+            self.send_message(report)
     
     def _handle_calculation_report(self, message: Message):
         """Handle opponent's calculation report."""
+        print(f"[DEBUG] Joiner _handle_calculation_report: state={self.battle_state.state.value if self.battle_state else 'None'}")
+        
         if self.battle_state and self.battle_state.state == BattleState.PROCESSING_TURN:
+            print(f"[DEBUG] Joiner: Processing CalculationReport")
             self.battle_state.record_opponent_calculation({
                 "damage_dealt": message.damage_dealt,
                 "defender_hp_remaining": message.defender_hp_remaining
             })
             
             if self.battle_state.calculations_match():
-                from .messages import CalculationConfirm
+                from messages import CalculationConfirm
                 confirm = CalculationConfirm(message.sequence_number)
                 self.send_message(confirm)
                 self.battle_state.advance_to_complete()
+                
+                # Check for game over after turn completes
+                if self.battle_state.is_game_over():
+                    winner = self.battle_state.get_winner()
+                    loser = self.battle_state.opponent_pokemon.pokemon.name if winner == self.my_pokemon.pokemon.name else self.my_pokemon.pokemon.name
+                    from messages import GameOver
+                    game_over_msg = GameOver(winner, loser, self.reliability.get_next_sequence_number())
+                    self.send_message(game_over_msg)
+                else:
+                    # Show updated status after turn completes
+                    print(f"\nTurn complete! {self.battle_state.get_battle_status()}")
+            else:
+                # Discrepancy - send resolution request
+                print(f"\n⚠ Calculation mismatch detected! Resolving...")
+                from messages import ResolutionRequest
+                resolution = ResolutionRequest(
+                    self.battle_state.last_attacker,
+                    message.move_used,
+                    self.battle_state.my_calculation["damage_dealt"],
+                    self.battle_state.my_calculation["defender_hp_remaining"],
+                    self.reliability.get_next_sequence_number()
+                )
+                self.send_message(resolution)
     
     def _handle_calculation_confirm(self, message: Message):
         """Handle calculation confirmation."""
         if self.battle_state:
             self.battle_state.mark_calculation_confirmed()
-            self.battle_state.advance_to_complete()
+            # Only advance if we're still processing the OPPONENT's turn (not our own)
+            # If my_turn=True, we're processing our own attack, so don't advance
+            if self.battle_state.state == BattleState.PROCESSING_TURN and not self.battle_state.my_turn:
+                self.battle_state.advance_to_complete()
+                
+                # Check for game over after turn completes
+                if self.battle_state.is_game_over():
+                    winner = self.battle_state.get_winner()
+                    loser = self.battle_state.opponent_pokemon.pokemon.name if winner == self.my_pokemon.pokemon.name else self.my_pokemon.pokemon.name
+                    from messages import GameOver
+                    game_over_msg = GameOver(winner, loser, self.reliability.get_next_sequence_number())
+                    self.send_message(game_over_msg)
+                else:
+                    # Show updated status after turn completes
+                    print(f"\nTurn complete! {self.battle_state.get_battle_status()}")
     
     def _handle_resolution_request(self, message: Message):
         """Handle resolution request."""
@@ -1086,7 +1449,20 @@ class JoinerPeer(BasePeer):
         """Handle game over."""
         if self.battle_state:
             self.battle_state.advance_to_game_over()
-            print(f"Game Over! {message.winner} wins!")
+            print(f"\n" + "="*60)
+            print(f"  GAME OVER!")
+            print(f"  Winner: {message.winner}")
+            print(f"  Loser: {message.loser}")
+            print("="*60)
+    
+    def _handle_rematch_request(self, message: Message):
+        """Handle rematch request from opponent."""
+        # Store opponent's rematch decision
+        self.opponent_wants_rematch = message.wants_rematch
+        if message.wants_rematch:
+            print(f"\nOpponent wants a rematch!")
+        else:
+            print(f"\nOpponent does not want a rematch.")
     
     def use_move(self, move_name: str):
         """
@@ -1105,7 +1481,7 @@ class JoinerPeer(BasePeer):
             return
         
         # Send attack announcement
-        from .messages import AttackAnnounce, DefenseAnnounce, CalculationReport
+        from messages import AttackAnnounce, DefenseAnnounce, CalculationReport
         announce = AttackAnnounce(
             move.name,
             self.reliability.get_next_sequence_number()
@@ -1173,15 +1549,27 @@ class SpectatorPeer(BasePeer):
     - Send and receive chat messages
     """
 
-    def __init__(self, port: int = 8890):
+    def __init__(self, port: int = 8890, debug: bool = False):
         """
         Initialize spectator peer.
 
         Args:
             port: Port to listen on
+            debug: Enable debug logging
         """
-        super().__init__(port)
+        super().__init__(port, debug=debug)
         self.battle_seed: Optional[int] = None
+        # Track battle state for spectators
+        self.host_pokemon: Optional[str] = None
+        self.joiner_pokemon: Optional[str] = None
+        self.host_hp: Optional[int] = None
+        self.joiner_hp: Optional[int] = None
+        self.last_attacker: Optional[str] = None  # "host" or "joiner"
+        self.last_move: Optional[str] = None
+        self.game_over: bool = False
+        self.winner: Optional[str] = None
+        self.loser: Optional[str] = None
+        self.rematch_decisions: Dict[str, Optional[bool]] = {"host": None, "joiner": None}
 
     def connect(self, host_address: str, host_port: int):
         """
@@ -1197,28 +1585,32 @@ class SpectatorPeer(BasePeer):
         self.peer_address = (host_address, host_port)
 
         # Send spectator request
-        from .messages import SpectatorRequest
-        request = SpectatorRequest()
+        from messages import SpectatorRequest
+        request = SpectatorRequest(sequence_number=self.reliability.get_next_sequence_number())
+        print(f"[DEBUG] Spectator sending SPECTATOR_REQUEST to {self.peer_address}, seq={request.sequence_number}")
         self.send_message(request, self.peer_address)
 
         # Wait for response
-        timeout = time.time() + 5.0
+        timeout = time.time() + 10.0  # Increased timeout to 10 seconds
         while time.time() < timeout:
             result = self.receive_message(timeout=0.5)
             if result:
                 msg, addr = result
+                print(f"[DEBUG] Spectator received message: {msg.message_type.value if hasattr(msg.message_type, 'value') else msg.message_type} from {addr}")
                 # IMPORTANT: Always call handle_message first to send ACK
                 self.handle_message(msg, addr)
                 if msg.message_type == MessageType.HANDSHAKE_RESPONSE:
                     self.battle_seed = msg.seed
                     self.damage_calculator.set_seed(msg.seed)
                     self.connected = True
+                    print(f"[DEBUG] Spectator connected successfully! Seed: {msg.seed}")
                     print(f"Connected to host as spectator at {host_address}:{host_port}")
                     return
             # Process reliability layer for retransmissions
             self.process_reliability()
 
-        raise ConnectionError("Failed to connect as spectator")
+        print(f"[DEBUG] Spectator connection timeout after {timeout - time.time() + 10.0:.1f} seconds")
+        raise ConnectionError("Failed to connect as spectator - host may not be running or not accepting spectators")
 
     def _handle_battle_message(self, message: Message, address: Tuple[str, int]):
         """
@@ -1228,15 +1620,85 @@ class SpectatorPeer(BasePeer):
             message: Battle message
             address: Sender address
         """
+        print(f"[DEBUG] Spectator received: {message.message_type.value if hasattr(message.message_type, 'value') else message.message_type}, from={address}")
+        
+        # Update internal battle state tracking
+        self._update_battle_state(message, address)
+        
         # Spectators just observe, so we trigger callbacks but don't respond
         if self.on_battle_update:
             update_str = self._format_battle_update(message)
             if update_str:
                 self.on_battle_update(update_str)
 
+    def _update_battle_state(self, message: Message, address: Tuple[str, int]):
+        """
+        Update internal battle state tracking for spectator display.
+        
+        Args:
+            message: Battle message
+            address: Sender address (to determine if host or joiner)
+        """
+        # Determine if message is from host (usually the peer_address matches)
+        is_from_host = (address == self.peer_address) if self.peer_address else False
+        
+        if message.message_type == MessageType.BATTLE_SETUP:
+            # Determine if this is host or joiner based on message order or address
+            if self.host_pokemon is None:
+                self.host_pokemon = message.pokemon_name
+                if hasattr(message, 'pokemon_data') and message.pokemon_data:
+                    self.host_hp = message.pokemon_data.get('hp', None)
+            else:
+                self.joiner_pokemon = message.pokemon_name
+                if hasattr(message, 'pokemon_data') and message.pokemon_data:
+                    self.joiner_hp = message.pokemon_data.get('hp', None)
+        elif message.message_type == MessageType.ATTACK_ANNOUNCE:
+            # Try to determine attacker based on address or message flow
+            # If we have pokemon names, we can infer from context
+            self.last_move = message.move_name
+            # We'll determine attacker when we see the calculation report
+        elif message.message_type == MessageType.CALCULATION_REPORT:
+            # Update HP and determine attacker
+            attacker_name = getattr(message, 'attacker', None)
+            if attacker_name:
+                # Match attacker to pokemon to determine if host or joiner
+                if self.host_pokemon and attacker_name == self.host_pokemon:
+                    self.last_attacker = "host"
+                    self.joiner_hp = message.defender_hp_remaining
+                elif self.joiner_pokemon and attacker_name == self.joiner_pokemon:
+                    self.last_attacker = "joiner"
+                    self.host_hp = message.defender_hp_remaining
+                else:
+                    # If we can't match, try to infer from context
+                    # If we already know one pokemon, the attacker must be the other
+                    if self.host_pokemon and not self.joiner_pokemon:
+                        self.last_attacker = "joiner"
+                        self.host_hp = message.defender_hp_remaining
+                    elif self.joiner_pokemon and not self.host_pokemon:
+                        self.last_attacker = "host"
+                        self.joiner_hp = message.defender_hp_remaining
+            else:
+                # Fallback: use address to determine (less reliable)
+                if is_from_host:
+                    self.last_attacker = "host"
+                    self.joiner_hp = message.defender_hp_remaining
+                else:
+                    self.last_attacker = "joiner"
+                    self.host_hp = message.defender_hp_remaining
+        elif message.message_type == MessageType.GAME_OVER:
+            self.game_over = True
+            self.winner = message.winner
+            self.loser = message.loser
+        elif message.message_type == MessageType.REMATCH_REQUEST:
+            # Track rematch decisions
+            if is_from_host:
+                self.rematch_decisions["host"] = message.wants_rematch
+            else:
+                self.rematch_decisions["joiner"] = message.wants_rematch
+
     def _format_battle_update(self, message: Message) -> Optional[str]:
         """
-        Format a battle message for display.
+        Format a battle message for display with detailed information.
 
         Args:
             message: Battle message
@@ -1245,12 +1707,59 @@ class SpectatorPeer(BasePeer):
             Formatted string or None
         """
         if message.message_type == MessageType.BATTLE_SETUP:
-            return f"Battle starting: {message.pokemon_name} joins the battle!"
+            pokemon_name = message.pokemon_name
+            if self.host_pokemon is None:
+                self.host_pokemon = pokemon_name
+                return f"\n{'='*60}\n  BATTLE STARTING!\n{'='*60}\n  HOST chose: {pokemon_name}"
+            else:
+                self.joiner_pokemon = pokemon_name
+                return f"  JOINER chose: {pokemon_name}\n{'='*60}\n"
         elif message.message_type == MessageType.ATTACK_ANNOUNCE:
-            return f"Attack announced: {message.move_name}"
+            move_name = message.move_name
+            attacker = self.last_attacker if self.last_attacker else "Unknown"
+            attacker_pokemon = self.host_pokemon if attacker == "host" else self.joiner_pokemon
+            return f"\n{'─'*60}\n  {attacker.upper()} ({attacker_pokemon}) is using: {move_name}\n{'─'*60}"
         elif message.message_type == MessageType.CALCULATION_REPORT:
-            return f"{message.status_message} (Damage: {message.damage_dealt}, Defender HP: {message.defender_hp_remaining})"
+            attacker_name = getattr(message, 'attacker', 'Unknown')
+            move_used = getattr(message, 'move_used', self.last_move or 'Unknown Move')
+            damage = message.damage_dealt
+            defender_hp = message.defender_hp_remaining
+            status_msg = getattr(message, 'status_message', '')
+            
+            # Determine attacker and defender pokemon
+            if self.last_attacker == "host":
+                attacker_pokemon = self.host_pokemon or attacker_name
+                defender_pokemon = self.joiner_pokemon or "Opponent"
+            elif self.last_attacker == "joiner":
+                attacker_pokemon = self.joiner_pokemon or attacker_name
+                defender_pokemon = self.host_pokemon or "Opponent"
+            else:
+                # Fallback: use attacker name from message
+                attacker_pokemon = attacker_name
+                defender_pokemon = self.joiner_pokemon if attacker_name == self.host_pokemon else (self.host_pokemon if attacker_name == self.joiner_pokemon else "Opponent")
+            
+            result = f"\n{'─'*60}\n"
+            result += f"  {attacker_pokemon} ({self.last_attacker.upper() if self.last_attacker else 'ATTACKER'}) used {move_used}!\n"
+            result += f"  {status_msg}\n"
+            result += f"  Damage dealt: {damage} HP\n"
+            result += f"  {defender_pokemon} HP remaining: {defender_hp}\n"
+            result += f"{'─'*60}\n"
+            
+            # Show current battle status
+            if self.host_pokemon and self.joiner_pokemon:
+                result += f"\n  Current Battle Status:\n"
+                result += f"    {self.host_pokemon} (Host): {self.host_hp if self.host_hp is not None else '?'} HP\n"
+                result += f"    {self.joiner_pokemon} (Joiner): {self.joiner_hp if self.joiner_hp is not None else '?'} HP\n"
+            
+            return result
         elif message.message_type == MessageType.GAME_OVER:
-            return f"Game Over! {message.winner} wins!"
+            winner_pokemon = self.winner if self.winner else message.winner
+            loser_pokemon = self.loser if self.loser else message.loser
+            return f"\n{'='*60}\n  BATTLE ENDED!\n{'='*60}\n  Winner: {winner_pokemon}\n  Loser: {loser_pokemon}\n{'='*60}\n"
+        elif message.message_type == MessageType.REMATCH_REQUEST:
+            wants_rematch = message.wants_rematch
+            player = "Host" if self.rematch_decisions["host"] is None else "Joiner"
+            decision = "wants" if wants_rematch else "does NOT want"
+            return f"\n  {player} {decision} a rematch..."
         return None
 

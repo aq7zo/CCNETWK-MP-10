@@ -23,6 +23,7 @@ class MessageType(Enum):
     CALCULATION_CONFIRM = "CALCULATION_CONFIRM"
     RESOLUTION_REQUEST = "RESOLUTION_REQUEST"
     GAME_OVER = "GAME_OVER"
+    REMATCH_REQUEST = "REMATCH_REQUEST"
     CHAT_MESSAGE = "CHAT_MESSAGE"
     BOOST_ACTIVATION = "BOOST_ACTIVATION"
     ACK = "ACK"
@@ -88,6 +89,8 @@ class Message:
                 return ResolutionRequest.from_fields(fields)
             elif msg_type == MessageType.GAME_OVER:
                 return GameOver.from_fields(fields)
+            elif msg_type == MessageType.REMATCH_REQUEST:
+                return RematchRequest.from_fields(fields)
             elif msg_type == MessageType.CHAT_MESSAGE:
                 return ChatMessage.from_fields(fields)
             elif msg_type == MessageType.BOOST_ACTIVATION:
@@ -448,6 +451,35 @@ class GameOver(Message):
         loser = fields.get('loser', '')
         sequence_number = int(fields.get('sequence_number', 0))
         return GameOver(winner, loser, sequence_number)
+
+
+class RematchRequest(Message):
+    """
+    Message sent to request or respond to a rematch after game over.
+    
+    Attributes:
+        message_type: Always REMATCH_REQUEST
+        wants_rematch: True if peer wants rematch, False otherwise
+        sequence_number: Unique message sequence number
+    """
+    
+    def __init__(self, wants_rematch: bool, sequence_number: int):
+        self.message_type = MessageType.REMATCH_REQUEST
+        self.wants_rematch = wants_rematch
+        self.sequence_number = sequence_number
+    
+    def serialize(self) -> bytes:
+        """Serialize rematch request message."""
+        return (f"message_type: REMATCH_REQUEST\n"
+                f"wants_rematch: {str(self.wants_rematch).lower()}\n"
+                f"sequence_number: {self.sequence_number}\n").encode('utf-8')
+    
+    @staticmethod
+    def from_fields(fields: Dict[str, str]) -> 'RematchRequest':
+        """Create from parsed fields."""
+        wants_rematch = fields.get('wants_rematch', 'false').lower() == 'true'
+        sequence_number = int(fields.get('sequence_number', 0))
+        return RematchRequest(wants_rematch, sequence_number)
 
 
 class ChatMessage(Message):
