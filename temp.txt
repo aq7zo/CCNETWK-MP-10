@@ -1,0 +1,71 @@
+        
+        if message.message_type == MessageType.BATTLE_SETUP:
+            self._handle_battle_setup(message)
+        elif message.message_type == MessageType.ATTACK_ANNOUNCE:
+            self._handle_attack_announce(message)
+        elif message.message_type == MessageType.CALCULATION_REPORT:
+            self._handle_calculation_report(message)
+        elif message.message_type == MessageType.CALCULATION_CONFIRM:
+            self._handle_calculation_confirm(message)
+        elif message.message_type == MessageType.RESOLUTION_REQUEST:
+            self._handle_resolution_request(message)
+        elif message.message_type == MessageType.GAME_OVER:
+            self._handle_game_over(message)
+    
+    def _handle_battle_setup(self, message: Message):
+        """Handle opponent's battle setup."""
+        if self.battle_state and self.battle_state.state == BattleState.SETUP:
+            # Use pokemon_data if provided, otherwise load from CSV
+            if message.pokemon_data:
+                opponent_pokemon = Pokemon(**message.pokemon_data)
+            else:
+                opponent_pokemon = self.pokemon_loader.get_pokemon(message.pokemon_name)
+
+            if opponent_pokemon:
+                self.battle_state.set_opponent_pokemon(
+                    opponent_pokemon,
+                    message.stat_boosts.get("special_attack_uses", 5),
+                    message.stat_boosts.get("special_defense_uses", 5)
+                )
+                self.battle_state.advance_to_waiting()
+                print(f"Opponent chose {message.pokemon_name}")
+    
+    def _handle_attack_announce(self, message: Message):
+        """Handle opponent's attack announcement."""
+        if self.battle_state and self.battle_state.state == BattleState.WAITING_FOR_MOVE:
+            move = self.move_db.get_move(message.move_name)
+            if move:
+                self.battle_state.last_move = move
+                self.battle_state.last_attacker = message.move_name  # Should be attacker name
+                
+                # Send defense announce
+                from messages import DefenseAnnounce
+                defense = DefenseAnnounce(self.reliability.get_next_sequence_number())
+                self.send_message(defense)
+                
+                # Advance to processing and calculate
+                self.battle_state.advance_to_processing(move, self.battle_state.opponent_pokemon.pokemon.name)
+                
+                # Calculate damage
+                outcome = self.damage_calculator.calculate_turn_outcome(
+                    self.battle_state.opponent_pokemon.pokemon,
+                    self.my_pokemon.pokemon,
+                    self.battle_state.opponent_pokemon.current_hp,
+                    self.my_pokemon.current_hp,
+                    move
+                )
+                
+                self.battle_state.record_my_calculation(outcome)
+                self.battle_state.apply_calculation(outcome)
+                
+                # Send calculation report
+                from messages import CalculationReport
+                report = CalculationReport(
+                    self.battle_state.opponent_pokemon.pokemon.name,
+                    outcome["move_used"],
+                    outcome.get("attacker_hp", self.battle_state.opponent_pokemon.current_hp),
+                    outcome["damage_dealt"],
+                    outcome["defender_hp_remaining"],
+                    outcome["status_message"],
+                    self.reliability.get_next_sequence_number()
+                )
