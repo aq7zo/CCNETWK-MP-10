@@ -6,12 +6,16 @@ These tests can be run on a single machine without network setup.
 """
 
 import unittest
-from pokemon_data import PokemonDataLoader
-from moves import MoveDatabase, Move
+import sys
+from pathlib import Path
+
+# Add src directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+
+from game_data import PokemonDataLoader, MoveDatabase, Move
 from messages import Message, MessageType
-from reliability import ReliabilityLayer
-from battle_state import BattleStateMachine, BattleState, BattlePokemon
-from damage_calculator import DamageCalculator
+from peer import ReliabilityLayer
+from battle import BattleStateMachine, BattleState, BattlePokemon, DamageCalculator
 
 
 class TestPokemonDataLoader(unittest.TestCase):
@@ -183,7 +187,7 @@ class TestBattleState(unittest.TestCase):
         self.assertEqual(self.battle_state.state, BattleState.WAITING_FOR_MOVE)
         
         # Waiting → Processing
-        from moves import Move
+        from game_data import Move
         move = Move("Thunderbolt", 90, "special", "electric")
         self.battle_state.advance_to_processing(move, "Pikachu")
         self.assertEqual(self.battle_state.state, BattleState.PROCESSING_TURN)

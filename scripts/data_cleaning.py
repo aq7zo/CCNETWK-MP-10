@@ -23,7 +23,7 @@ class PokemonDataCleaner:
     - Validates against expected ranges
     """
     
-    def __init__(self, input_file: str = "pokemon.csv", output_file: str = "pokemon_cleaned.csv"):
+    def __init__(self, input_file: str = "data/pokemon.csv", output_file: str = "data/pokemon_cleaned.csv"):
         """
         Initialize the data cleaner.
         

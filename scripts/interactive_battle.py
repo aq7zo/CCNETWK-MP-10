@@ -7,9 +7,13 @@ between two peers with user-friendly prompts for IP addresses and ports.
 
 import time
 import sys
+from pathlib import Path
+
+# Add src directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+
 from peer import HostPeer, JoinerPeer, SpectatorPeer
-from moves import MoveDatabase
-from pokemon_data import PokemonDataLoader
+from game_data import MoveDatabase, PokemonDataLoader
 
 
 def get_user_input(prompt, default=None):

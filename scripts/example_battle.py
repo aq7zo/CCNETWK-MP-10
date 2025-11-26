@@ -6,8 +6,14 @@ to run a Pokémon battle between two peers.
 """
 
 import time
+import sys
+from pathlib import Path
+
+# Add src directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+
 from peer import HostPeer, JoinerPeer
-from moves import MoveDatabase
+from game_data import MoveDatabase
 
 
 def run_host_example():
@@ -200,7 +206,7 @@ def run_chat_example():
 
 def list_available_pokemon():
     """List all available Pokémon."""
-    from pokemon_data import PokemonDataLoader
+    from game_data import PokemonDataLoader
     
     print("\n=== Available Pokémon ===")
     loader = PokemonDataLoader()
