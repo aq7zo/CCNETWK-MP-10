@@ -42,9 +42,10 @@ class PendingMessage:
         retry_count: Number of retransmission attempts
         timestamp: When the message was first sent
         timeout: Timeout duration in seconds
+        target_address: Target address for retransmissions (None = use peer_address)
     """
     
-    def __init__(self, message: Message, sequence_number: int, timeout: float = 0.5):
+    def __init__(self, message: Message, sequence_number: int, timeout: float = 0.5, target_address: Optional[Tuple[str, int]] = None):
         """
         Initialize pending message.
         
@@ -52,12 +53,14 @@ class PendingMessage:
             message: The message to send
             sequence_number: Message sequence number
             timeout: Timeout in seconds before retry
+            target_address: Target address for retransmissions
         """
         self.message = message
         self.sequence_number = sequence_number
         self.retry_count = 0
         self.timestamp = time.time()
         self.timeout = timeout
+        self.target_address = target_address
     
     def should_retry(self, max_retries: int = 3) -> bool:
         """
@@ -117,13 +120,14 @@ class ReliabilityLayer:
         self.sequence_counter += 1
         return self.sequence_counter
     
-    def send_message(self, message: Message, set_sequence: bool = True) -> int:
+    def send_message(self, message: Message, set_sequence: bool = True, target_address: Optional[Tuple[str, int]] = None) -> int:
         """
         Prepare a message for sending with reliability guarantees.
         
         Args:
             message: Message to send
             set_sequence: Whether to set sequence number on message
+            target_address: Target address for retransmissions (None = use peer_address)
             
         Returns:
             Assigned sequence number
@@ -136,7 +140,7 @@ class ReliabilityLayer:
         
         # Track as pending if it requires acknowledgment
         if self._requires_ack(message):
-            self.pending_messages[seq_num] = PendingMessage(message, seq_num, self.timeout)
+            self.pending_messages[seq_num] = PendingMessage(message, seq_num, self.timeout, target_address)
         
         return seq_num
     
@@ -354,7 +358,8 @@ class BasePeer:
             raise RuntimeError("No target address specified")
 
         # Get sequence number and prepare for sending
-        seq_num = self.reliability.send_message(message)
+        # Pass target address so retransmissions go to the correct address
+        seq_num = self.reliability.send_message(message, target_address=target)
 
         # Serialize and send
         data = message.serialize()
@@ -471,11 +476,14 @@ class BasePeer:
         if hasattr(message, 'sequence_number'):
             self.send_ack(message.sequence_number, address)
             
-            # Check for duplicates
-            if self.reliability.is_duplicate(message.sequence_number):
-                # Duplicate message, ignore
+            # Check for duplicates - but allow HANDSHAKE_RESPONSE through even if duplicate
+            # (needed for spectator connection retries)
+            is_handshake_response = message.message_type == MessageType.HANDSHAKE_RESPONSE
+            if self.reliability.is_duplicate(message.sequence_number) and not is_handshake_response:
+                # Duplicate message, ignore (except handshake responses)
                 return
-            self.reliability.mark_received(message.sequence_number)
+            if not is_handshake_response:
+                self.reliability.mark_received(message.sequence_number)
         
         # Route to appropriate handler
         if message.message_type == MessageType.CHAT_MESSAGE:
@@ -640,7 +648,9 @@ class BasePeer:
         retransmissions = self.reliability.check_retransmissions()
         for seq_num, message in retransmissions:
             # Retransmit with ORIGINAL sequence number (don't create new one)
-            target = self.peer_address
+            # Use the target address stored in the pending message, or fall back to peer_address
+            pending = self.reliability.pending_messages.get(seq_num)
+            target = pending.target_address if pending and pending.target_address else self.peer_address
             if target:
                 # Ensure message has the original sequence number
                 if hasattr(message, 'sequence_number'):
@@ -1135,6 +1145,13 @@ class HostPeer(BasePeer):
                     print(f"\nTurn complete! {self.battle_state.get_battle_status()}")
             else:
                 # Discrepancy - send resolution request
+                # But first check if we have our own calculation
+                if not self.battle_state.my_calculation:
+                    # Our calculation hasn't been performed yet, wait for it
+                    # This can happen if opponent's CalculationReport arrives before we finish processing DefenseAnnounce
+                    print(f"\n⚠ Waiting for calculation to complete before resolving mismatch...")
+                    return
+                
                 print(f"\n⚠ Calculation mismatch detected! Resolving...")
                 from messages import ResolutionRequest
                 resolution = ResolutionRequest(
@@ -1562,6 +1579,13 @@ class JoinerPeer(BasePeer):
                     print(f"\nTurn complete! {self.battle_state.get_battle_status()}")
             else:
                 # Discrepancy - send resolution request
+                # But first check if we have our own calculation
+                if not self.battle_state.my_calculation:
+                    # Our calculation hasn't been performed yet, wait for it
+                    # This can happen if opponent's CalculationReport arrives before we finish processing DefenseAnnounce
+                    print(f"\n⚠ Waiting for calculation to complete before resolving mismatch...")
+                    return
+                
                 print(f"\n⚠ Calculation mismatch detected! Resolving...")
                 from messages import ResolutionRequest
                 resolution = ResolutionRequest(

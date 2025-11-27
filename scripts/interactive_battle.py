@@ -712,24 +712,62 @@ def run_host_battle_loop(host):
     # Select Pokémon (chat thread not running, so no conflict)
     pokemon_name = select_pokemon()
 
+    # Check if opponent already selected (they might have sent BattleSetup while we were in chat)
+    # Preserve if opponent_pokemon exists and state is SETUP or WAITING_FOR_MOVE (not GAME_OVER from previous battle)
+    opponent_already_selected = (host.battle_state and 
+                                  host.battle_state.opponent_pokemon is not None and
+                                  host.battle_state.state.value != "GAME_OVER")
+    
+    # Preserve opponent_pokemon if it exists before resetting
+    preserved_opponent = None
+    if opponent_already_selected:
+        preserved_opponent = host.battle_state.opponent_pokemon
+
     # Start battle
     print(f"\nStarting battle with {pokemon_name}...")
     host.start_battle(pokemon_name)
+    
+    # Restore opponent_pokemon if it was preserved (opponent selected before us)
+    # Reset HP to full when restoring to prevent fainted Pokémon from previous battle
+    if preserved_opponent and host.battle_state:
+        # Create a fresh BattlePokemon with full HP
+        from battle import BattlePokemon
+        fresh_opponent = BattlePokemon(
+            preserved_opponent.pokemon,
+            preserved_opponent.special_attack_uses,
+            preserved_opponent.special_defense_uses
+        )
+        host.battle_state.opponent_pokemon = fresh_opponent
+        host.battle_state.advance_to_waiting()
 
-    # Wait for opponent's Pokémon
-    print("Waiting for opponent to select Pokémon...")
-    timeout = time.time() + 60.0
-    while host.battle_state.state.value == "SETUP" and time.time() < timeout:
-        result = host.receive_message(timeout=0.5)
-        if result:
-            msg, addr = result
-            host.handle_message(msg, addr)
-        host.process_reliability()
-        time.sleep(0.1)
-
-    if host.battle_state.state.value == "SETUP":
-        print("Timeout waiting for opponent's Pokémon")
-        return False
+    # Wait for opponent's Pokémon - check if both Pokémon are set (via network messages)
+    if not (host.battle_state and 
+            host.battle_state.my_pokemon and 
+            host.battle_state.opponent_pokemon):
+        print("Waiting for opponent to select Pokémon...")
+        timeout = time.time() + 60.0
+        while time.time() < timeout:
+            # Check if both Pokémon are set (indicates both players have selected and exchanged messages)
+            if (host.battle_state and 
+                host.battle_state.my_pokemon and 
+                host.battle_state.opponent_pokemon):
+                # Both Pokémon are set, we're ready
+                break
+            
+            # Process messages while waiting (this handles receiving opponent's BattleSetup)
+            result = host.receive_message(timeout=0.5)
+            if result:
+                msg, addr = result
+                host.handle_message(msg, addr)
+            host.process_reliability()
+            time.sleep(0.1)
+        
+        # Verify both Pokémon are set
+        if not (host.battle_state and 
+                host.battle_state.my_pokemon and 
+                host.battle_state.opponent_pokemon):
+            print("Timeout waiting for opponent's Pokémon")
+            return False
 
     # Battle loop
     print("\n" + "="*60)
@@ -1144,24 +1182,62 @@ def run_joiner_battle_loop(joiner):
     # Select Pokémon (chat thread not running, so no conflict)
     pokemon_name = select_pokemon()
 
+    # Check if opponent already selected (they might have sent BattleSetup while we were in chat)
+    # Preserve if opponent_pokemon exists and state is SETUP or WAITING_FOR_MOVE (not GAME_OVER from previous battle)
+    opponent_already_selected = (joiner.battle_state and 
+                                  joiner.battle_state.opponent_pokemon is not None and
+                                  joiner.battle_state.state.value != "GAME_OVER")
+    
+    # Preserve opponent_pokemon if it exists before resetting
+    preserved_opponent = None
+    if opponent_already_selected:
+        preserved_opponent = joiner.battle_state.opponent_pokemon
+
     # Start battle
     print(f"\nStarting battle with {pokemon_name}...")
     joiner.start_battle(pokemon_name)
+    
+    # Restore opponent_pokemon if it was preserved (opponent selected before us)
+    # Reset HP to full when restoring to prevent fainted Pokémon from previous battle
+    if preserved_opponent and joiner.battle_state:
+        # Create a fresh BattlePokemon with full HP
+        from battle import BattlePokemon
+        fresh_opponent = BattlePokemon(
+            preserved_opponent.pokemon,
+            preserved_opponent.special_attack_uses,
+            preserved_opponent.special_defense_uses
+        )
+        joiner.battle_state.opponent_pokemon = fresh_opponent
+        joiner.battle_state.advance_to_waiting()
 
-    # Wait for opponent's Pokémon
-    print("Waiting for opponent to select Pokémon...")
-    timeout = time.time() + 60.0
-    while joiner.battle_state.state.value == "SETUP" and time.time() < timeout:
-        result = joiner.receive_message(timeout=0.5)
-        if result:
-            msg, addr = result
-            joiner.handle_message(msg, addr)
-        joiner.process_reliability()
-        time.sleep(0.1)
-
-    if joiner.battle_state.state.value == "SETUP":
-        print("Timeout waiting for opponent's Pokémon")
-        return False
+    # Wait for opponent's Pokémon - check if both Pokémon are set (via network messages)
+    if not (joiner.battle_state and 
+            joiner.battle_state.my_pokemon and 
+            joiner.battle_state.opponent_pokemon):
+        print("Waiting for opponent to select Pokémon...")
+        timeout = time.time() + 60.0
+        while time.time() < timeout:
+            # Check if both Pokémon are set (indicates both players have selected and exchanged messages)
+            if (joiner.battle_state and 
+                joiner.battle_state.my_pokemon and 
+                joiner.battle_state.opponent_pokemon):
+                # Both Pokémon are set, we're ready
+                break
+            
+            # Process messages while waiting (this handles receiving opponent's BattleSetup)
+            result = joiner.receive_message(timeout=0.5)
+            if result:
+                msg, addr = result
+                joiner.handle_message(msg, addr)
+            joiner.process_reliability()
+            time.sleep(0.1)
+        
+        # Verify both Pokémon are set
+        if not (joiner.battle_state and 
+                joiner.battle_state.my_pokemon and 
+                joiner.battle_state.opponent_pokemon):
+            print("Timeout waiting for opponent's Pokémon")
+            return False
 
     # Battle loop
     print("\n" + "="*60)
