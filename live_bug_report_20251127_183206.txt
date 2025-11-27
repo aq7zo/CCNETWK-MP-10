@@ -1,0 +1,16 @@
+================================================================================
+POKEPROTOCOL LIVE BUG REPORT (UPDATING IN REAL-TIME)
+================================================================================
+Last Updated: 2025-11-27T18:42:50.450813
+Status: ACTIVE - Report updates automatically
+
+
+================================================================================
+POKEPROTOCOL BUG REPORT
+================================================================================
+Generated: 2025-11-27T18:42:50.450801
+
+WARNING: No debug loggers found. Debug logging may not be enabled.
+
+To enable debug logging, ensure debug_logger.py is available and
+DEBUG_LOGGING_ENABLED is True in peer.py.

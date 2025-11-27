@@ -30,3 +30,4 @@ __all__ = [
     'GameOver', 'ChatMessage', 'BoostActivation', 'Ack',
 ]
 
+

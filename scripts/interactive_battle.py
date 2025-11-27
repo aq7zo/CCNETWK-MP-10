@@ -184,8 +184,11 @@ def _generate_auto_bug_report():
         traceback.print_exc()
 
 
-def get_user_input(prompt, default=None):
-    """Get user input with optional default value."""
+def get_user_input(prompt, default=None, validator_func=None):
+    """Get user input with optional default value and validation."""
+    if validator_func:
+        return get_validated_input(prompt, validator_func, default=default)
+    
     if default:
         prompt_text = f"{prompt} (default: {default}): "
     else:
@@ -197,84 +200,288 @@ def get_user_input(prompt, default=None):
     return user_input
 
 
+def get_validated_input(prompt, validator_func, error_message="Invalid input. Please try again.", default=None):
+    """
+    Get user input with validation.
+    
+    Args:
+        prompt: The prompt to display
+        validator_func: Function that takes input string and returns (is_valid, value_or_error)
+        error_message: Message to display on invalid input
+        default: Default value if input is empty
+        
+    Returns:
+        Validated input value
+    """
+    while True:
+        try:
+            if default:
+                prompt_text = f"{prompt} (default: {default}): "
+            else:
+                prompt_text = f"{prompt}: "
+            
+            user_input = input(prompt_text).strip()
+            
+            # Use default if empty and default provided
+            if not user_input and default is not None:
+                return default
+            
+            # Validate input
+            is_valid, result = validator_func(user_input)
+            if is_valid:
+                return result
+            else:
+                print(f"✗ {error_message if error_message else result}")
+        except (EOFError, KeyboardInterrupt):
+            raise
+        except Exception as e:
+            print(f"✗ Error: {e}. Please try again.")
+
+
+def validate_integer(input_str, min_val=None, max_val=None):
+    """Validate integer input within optional range."""
+    try:
+        value = int(input_str)
+        if min_val is not None and value < min_val:
+            return False, f"Value must be at least {min_val}"
+        if max_val is not None and value > max_val:
+            return False, f"Value must be at most {max_val}"
+        return True, value
+    except ValueError:
+        return False, "Please enter a valid integer"
+
+
+def validate_choice(input_str, valid_choices, case_sensitive=False):
+    """Validate input is one of the valid choices."""
+    if not case_sensitive:
+        input_str = input_str.upper()
+        valid_choices = [c.upper() if isinstance(c, str) else c for c in valid_choices]
+    
+    if input_str in valid_choices:
+        return True, input_str
+    return False, f"Please enter one of: {', '.join(str(c) for c in valid_choices)}"
+
+
+def validate_port(input_str):
+    """Validate port number (1-65535)."""
+    return validate_integer(input_str, min_val=1, max_val=65535)
+
+
+def validate_yes_no(input_str):
+    """Validate Y/N input."""
+    upper_input = input_str.upper()
+    if upper_input in ['Y', 'YES', 'N', 'NO']:
+        return True, upper_input in ['Y', 'YES']
+    return False, "Please enter Y or N"
+
+
+def validate_non_empty(input_str):
+    """Validate input is not empty."""
+    if input_str.strip():
+        return True, input_str.strip()
+    return False, "Input cannot be empty"
+
+
 def select_pokemon():
-    """Allow user to select a Pokémon."""
+    """Allow user to select a Pokémon with pagination support."""
     import sys
     loader = PokemonDataLoader()
+    names = loader.get_all_pokemon_names()
+    total_pokemon = len(names)
+    items_per_page = 30
 
     print("\n=== Select Your Pokémon ===")
     print("Enter a Pokémon name, or type 'list' to see available Pokémon")
     sys.stdout.flush()  # Ensure prompt is visible
 
     while True:
-        pokemon_name = input("Pokémon name: ").strip()
+        pokemon_input = input("Pokémon name: ").strip()
 
-        if pokemon_name.lower() == 'list':
-            print("\nAvailable Pokémon (showing first 30):")
-            names = loader.get_all_pokemon_names()
-            for i, name in enumerate(names[:30], 1):
-                print(f"{i}. {name}")
-            print(f"\n... and {len(names) - 30} more")
-            print()  # Add blank line before next prompt
-            sys.stdout.flush()  # Ensure output is visible before next prompt
+        if pokemon_input.lower() == 'list':
+            # Pagination mode
+            current_page = 0
+            total_pages = (total_pokemon + items_per_page - 1) // items_per_page
+            
+            while True:
+                start_idx = current_page * items_per_page
+                end_idx = min(start_idx + items_per_page, total_pokemon)
+                page_names = names[start_idx:end_idx]
+                
+                print(f"\n=== Available Pokémon (Page {current_page + 1} of {total_pages}) ===")
+                for i, name in enumerate(page_names, start=start_idx + 1):
+                    print(f"{i}. {name}")
+                
+                # Show navigation options
+                nav_options = []
+                if current_page > 0:
+                    nav_options.append("P or Previous - Go to previous page")
+                if current_page < total_pages - 1:
+                    nav_options.append("N or Next - Go to next page")
+                nav_options.append(f"# - Select Pokémon by index (1-{total_pokemon})")
+                nav_options.append("Q or Quit - Exit list view")
+                
+                print(f"\nNavigation:")
+                for opt in nav_options:
+                    print(f"  {opt}")
+                
+                nav_input = input("\nEnter command: ").strip()
+                
+                nav_upper = nav_input.upper()
+                
+                # Handle navigation commands (circular pagination)
+                if nav_upper in ['N', 'NEXT']:
+                    current_page = (current_page + 1) % total_pages
+                elif nav_upper in ['P', 'PREVIOUS', 'PREV']:
+                    current_page = (current_page - 1) % total_pages
+                elif nav_upper in ['Q', 'QUIT', 'EXIT']:
+                    print("Exiting list view.")
+                    break
+                elif nav_input.isdigit():
+                    # User entered a number - try to select Pokémon
+                    idx = int(nav_input)
+                    if 1 <= idx <= total_pokemon:
+                        selected_name = names[idx - 1]
+                        pokemon = loader.get_pokemon(selected_name)
+                        if pokemon:
+                            print(f"\nSelected: {pokemon.name} (HP: {pokemon.hp}, Type: {pokemon.type1}/{pokemon.type2 or 'None'})")
+                            return pokemon.name
+                        else:
+                            print(f"✗ Pokémon at index {idx} not found.")
+                    else:
+                        print(f"✗ Please enter a number between 1 and {total_pokemon}.")
+                else:
+                    # Try to interpret as Pokémon name
+                    pokemon = loader.get_pokemon(nav_input)
+                    if pokemon:
+                        print(f"\nSelected: {pokemon.name} (HP: {pokemon.hp}, Type: {pokemon.type1}/{pokemon.type2 or 'None'})")
+                        return pokemon.name
+                    else:
+                        print(f"✗ Invalid command or Pokémon name. Please try again.")
+            
+            # After exiting list view, continue to main loop
             continue
 
-        pokemon = loader.get_pokemon(pokemon_name)
+        # Try to find Pokémon by name
+        pokemon = loader.get_pokemon(pokemon_input)
         if pokemon:
             print(f"Selected: {pokemon.name} (HP: {pokemon.hp}, Type: {pokemon.type1}/{pokemon.type2 or 'None'})")
             return pokemon.name
         else:
-            print(f"Pokémon '{pokemon_name}' not found. Try again or type 'list'.")
+            print(f"✗ Pokémon '{pokemon_input}' not found. Try again or type 'list'.")
             print()  # Add blank line before next prompt
             sys.stdout.flush()  # Ensure output is visible before next prompt
 
 
-def select_move():
+def select_move(pokemon_name=None):
     """Allow user to select a move."""
     # Stop chat thread to avoid stdin conflicts
     stop_chat_input_thread()
     
     move_db = MoveDatabase()
+    loader = PokemonDataLoader()
 
-    print("\nYour turn! Select a move:")
-    print("1. Quick Attack (Electric moves)")
-    print("2. Strong Attack (Fire moves)")
-    print("3. Special Attack (Water moves)")
-    print("4. Custom move name")
+    # Get Pokémon data if provided
+    pokemon = None
+    if pokemon_name:
+        pokemon = loader.get_pokemon(pokemon_name)
+    
+    # Filter moves based on Pokémon types if Pokémon is provided
+    available_moves = []
+    if pokemon:
+        # Get moves matching Pokémon's types
+        type1_moves = move_db.get_moves_by_type(pokemon.type1)
+        available_moves.extend(type1_moves)
+        
+        if pokemon.type2:
+            type2_moves = move_db.get_moves_by_type(pokemon.type2)
+            # Add type2 moves, avoiding duplicates
+            for move in type2_moves:
+                if move not in available_moves:
+                    available_moves.append(move)
+        
+        # If no moves found for Pokémon types, fall back to all moves
+        if not available_moves:
+            available_moves = [move_db.get_move(name) for name in move_db.get_all_move_names()]
+            available_moves = [m for m in available_moves if m is not None]
+    
+    # If no Pokémon provided or no matching moves, show all moves grouped by type
+    if not available_moves:
+        print("\nYour turn! Select a move:")
+        print("1. Quick Attack (Electric moves)")
+        print("2. Strong Attack (Fire moves)")
+        print("3. Special Attack (Water moves)")
+        print("4. Custom move name")
 
-    choice = input("Enter choice (1-4): ").strip()
+        choice = get_validated_input(
+            "Enter choice (1-4)",
+            lambda x: validate_integer(x, min_val=1, max_val=4),
+            "Please enter a number between 1 and 4"
+        )
 
-    if choice == '1':
-        moves = ['Thunder Shock', 'Thunderbolt', 'Spark']
-    elif choice == '2':
-        moves = ['Ember', 'Flame Thrower', 'Fire Blast']
-    elif choice == '3':
-        moves = ['Water Gun', 'Bubble Beam', 'Hydro Pump']
-    elif choice == '4':
-        move_name = input("Enter move name: ").strip()
-        return move_name
+        if choice == 1:
+            moves = ['Thunder Shock', 'Thunderbolt', 'Spark']
+        elif choice == 2:
+            moves = ['Ember', 'Flame Thrower', 'Fire Blast']
+        elif choice == 3:
+            moves = ['Water Gun', 'Bubble Beam', 'Hydro Pump']
+        elif choice == 4:
+            move_name = get_validated_input(
+                "Enter move name",
+                validate_non_empty,
+                "Move name cannot be empty"
+            )
+            return move_name
+
+        for i, move_name in enumerate(moves, 1):
+            move = move_db.get_move(move_name)
+            if move:
+                print(f"{i}. {move_name} (Power: {move.power}, Type: {move.move_type})")
+
+        move_choice = get_validated_input(
+            f"Select move (1-{len(moves)})",
+            lambda x: validate_integer(x, min_val=1, max_val=len(moves)),
+            f"Please enter a number between 1 and {len(moves)}"
+        )
+        
+        result = moves[move_choice - 1]
+        return result
     else:
-        print("Invalid choice, using Thunder Shock")
-        return "Thunder Shock"
-
-    for i, move_name in enumerate(moves, 1):
-        move = move_db.get_move(move_name)
-        if move:
-            print(f"{i}. {move_name} (Power: {move.power}, Type: {move.move_type})")
-
-    move_choice = input(f"Select move (1-{len(moves)}): ").strip()
-    try:
-        idx = int(move_choice) - 1
-        if 0 <= idx < len(moves):
-            result = moves[idx]
-            # Restart chat thread after input (chat is disabled during battle anyway)
-            # start_chat_input_thread will check if already running
-            return result
-    except:
-        pass
-
-    result = moves[0]
-    return result
+        # Show moves matching Pokémon types
+        print(f"\nYour turn! Select a move for {pokemon.name}:")
+        print(f"Available moves (matching {pokemon.type1}" + (f"/{pokemon.type2}" if pokemon.type2 else "") + " types):")
+        
+        # Limit to first 20 moves to avoid overwhelming the user
+        display_moves = available_moves[:20]
+        for i, move in enumerate(display_moves, 1):
+            print(f"{i}. {move.name} (Power: {move.power}, Type: {move.move_type})")
+        
+        if len(available_moves) > 20:
+            print(f"... and {len(available_moves) - 20} more moves")
+            print("(You can also type the move name directly)")
+        
+        print(f"{len(display_moves) + 1}. Enter custom move name")
+        
+        move_choice = get_validated_input(
+            f"Select move (1-{len(display_moves) + 1})",
+            lambda x: validate_integer(x, min_val=1, max_val=len(display_moves) + 1),
+            f"Please enter a number between 1 and {len(display_moves) + 1}"
+        )
+        
+        if move_choice <= len(display_moves):
+            return display_moves[move_choice - 1].name
+        else:
+            # Custom move name option
+            move_name = get_validated_input(
+                "Enter move name",
+                validate_non_empty,
+                "Move name cannot be empty"
+            )
+            move = move_db.get_move(move_name)
+            if move:
+                return move.name
+            else:
+                print(f"✗ Move '{move_name}' not found, using {display_moves[0].name}")
+                return display_moves[0].name
 
 
 def clear_input_stream():
@@ -421,8 +628,13 @@ def run_pre_battle_chat(peer, player_name, opponent_name):
     print("="*60)
     
     # Ask if this player wants to enable chat
-    response = input(f"\nDo you want to enable chat? (Y/N, default: N): ").strip().upper()
-    if response == 'Y':
+    response = get_validated_input(
+        "\nDo you want to enable chat? (Y/N)",
+        validate_yes_no,
+        "Please enter Y or N",
+        default=False
+    )
+    if response:
         peer.chat_enabled = True
         print(f"\n[SYSTEM] You enabled chat. Chat is now active!")
         print(f"[SYSTEM] Type '/chat <message>' to send messages.")
@@ -450,8 +662,13 @@ def run_pre_battle_chat(peer, player_name, opponent_name):
 
 def stop_chat_input_thread():
     """Stop the background chat input thread."""
-    global _chat_thread_active
+    global _chat_thread_active, _chat_thread
     _chat_thread_active = False
+    # Give the thread a moment to exit (it's waiting on input() which will raise EOFError)
+    if _chat_thread and _chat_thread.is_alive():
+        # Small delay to allow thread to exit gracefully
+        import time
+        time.sleep(0.1)
 
 
 def check_chat_input(prompt="Type 'chat' to send a message, or press Enter to continue: "):
@@ -475,112 +692,20 @@ def check_chat_input(prompt="Type 'chat' to send a message, or press Enter to co
         return None
 
 
-def run_interactive_host():
-    """Run host with interactive prompts."""
-    global _should_generate_report, _host_peer_instance
+def run_host_battle_loop(host):
+    """Run a single battle loop for the host. Can be called multiple times for rematches."""
+    # Pre-battle chat session (only on first battle)
+    if not hasattr(host, '_battle_count') or host._battle_count == 0:
+        run_pre_battle_chat(host, "Host", "Joiner")
+        host._battle_count = 0
     
-    # Enable automatic bug report generation
-    _should_generate_report = True
-    
-    # Start live bug report
-    start_live_bug_report()
-    
-    # Register cleanup function to generate report on exit
-    atexit.register(_generate_auto_bug_report)
-    
-    print("\n" + "="*60)
-    print("  POKEPROTOCOL - HOST MODE")
-    print("="*60)
-    print("  (Live bug report is updating in real-time)")
-    print("  (Final bug report will be generated on exit)")
-    print("="*60)
-
-    # Get port with retry logic
-    port = None
-    host = None
-    while host is None:
-        port_str = get_user_input("Enter port to listen on", "8888" if port is None else str(port))
-        try:
-            port = int(port_str)
-        except:
-            print("Invalid port, using 8888")
-            port = 8888
-
-        try:
-            print(f"\nInitializing host on port {port}...")
-            host = HostPeer(port=port)
-            _host_peer_instance = host  # Store for cleanup
-            host.start_listening()
-        except OSError as e:
-            error_str = str(e)
-            if "Address already in use" in error_str or "10048" in error_str or "EADDRINUSE" in error_str or "WSAEADDRINUSE" in error_str:
-                print(f"\n✗ Port {port} is already in use!")
-                retry = input("Would you like to try a different port? (Y/N): ").strip().upper()
-                if retry != 'Y':
-                    print("\nExiting...")
-                    return
-            else:
-                print(f"\n✗ Error initializing host: {e}")
-                retry = input("Would you like to try again? (Y/N): ").strip().upper()
-                if retry != 'Y':
-                    print("\nExiting...")
-                    print("\nGenerating bug report...")
-                    _generate_auto_bug_report()
-                    return
-        except Exception as e:
-            print(f"\n✗ Unexpected error: {e}")
-            retry = input("Would you like to try again? (Y/N): ").strip().upper()
-            if retry != 'Y':
-                print("\nExiting...")
-                return
-
-    # Set up chat callback
-    def on_chat_received(sender_name, message_text):
-        # Only show chat messages if chat is enabled
-        if sender_name == "SYSTEM" or (hasattr(host, 'chat_enabled') and host.chat_enabled):
-            print(f"\n[CHAT] {sender_name}: {message_text}")
-    
-    host.on_chat_message = on_chat_received
-
-    # Don't start chat thread yet - it will be started only if chat is enabled
-    # This prevents stdin conflicts with other input operations
-    player_name = "Host"
-
-    # Wait for connection
-    print("\n" + "="*60)
-    print("  WAITING FOR JOINER TO CONNECT...")
-    print("="*60)
-    print(f"Tell the other player to connect to:")
-    print(f"  IP Address: <your_ip_address>")
-    print(f"  Port: {port}")
-    print("\nWaiting...")
-
-    timeout = time.time() + 60.0  # 60 second timeout
-    while not host.connected and time.time() < timeout:
-        result = host.receive_message(timeout=0.5)
-        if result:
-            msg, addr = result
-            host.handle_message(msg, addr)
-        host.process_reliability()
-
-    if not host.connected:
-        print("\nConnection timeout! No joiner connected.")
-        host.disconnect()
-        print("\nGenerating bug report...")
-        _generate_auto_bug_report()
-        return
-
-    print("\n✓ Joiner connected!")
-    
-    # Update live bug report after connection
-    update_live_bug_report_now()
-    
-    # Pre-battle chat session
-    run_pre_battle_chat(host, "Host", "Joiner")
+    host._battle_count += 1
     
     # Disable chat before battle starts
     host.chat_enabled = False
     
+    # Stop chat thread before battle to prevent stdin conflicts
+    stop_chat_input_thread()
     # Clear input stream before battle to prevent leftover input
     clear_input_stream()
     
@@ -593,7 +718,7 @@ def run_interactive_host():
 
     # Wait for opponent's Pokémon
     print("Waiting for opponent to select Pokémon...")
-    timeout = time.time() + 30.0
+    timeout = time.time() + 60.0
     while host.battle_state.state.value == "SETUP" and time.time() < timeout:
         result = host.receive_message(timeout=0.5)
         if result:
@@ -604,10 +729,7 @@ def run_interactive_host():
 
     if host.battle_state.state.value == "SETUP":
         print("Timeout waiting for opponent's Pokémon")
-        host.disconnect()
-        print("\nGenerating bug report...")
-        _generate_auto_bug_report()
-        return
+        return False
 
     # Battle loop
     print("\n" + "="*60)
@@ -635,7 +757,7 @@ def run_interactive_host():
             print(f"{'='*60}")
             print(f"{status}")
 
-            move_name = select_move()
+            move_name = select_move(host.my_pokemon.pokemon.name if host.my_pokemon else None)
             move = move_db.get_move(move_name)
 
             if move and host.battle_state:
@@ -668,15 +790,11 @@ def run_interactive_host():
         stop_chat_input_thread()
         
         # Prompt for new battle
-        wants_rematch = None
-        while wants_rematch is None:
-            response = input("\nStart a new battle? (Y/N): ").strip().upper()
-            if response == 'Y':
-                wants_rematch = True
-            elif response == 'N':
-                wants_rematch = False
-            else:
-                print("Please enter Y or N")
+        wants_rematch = get_validated_input(
+            "\nStart a new battle? (Y/N)",
+            validate_yes_no,
+            "Please enter Y or N"
+        )
         
         # Send rematch request to opponent
         from messages import RematchRequest
@@ -688,8 +806,13 @@ def run_interactive_host():
         
         # Re-enable chat after battle (if players want to chat)
         print(f"\n[SYSTEM] Battle ended. Chat can be re-enabled.")
-        response = input("Do you want to enable chat? (Y/N, default: N): ").strip().upper()
-        if response == 'Y':
+        response = get_validated_input(
+            "Do you want to enable chat? (Y/N)",
+            validate_yes_no,
+            "Please enter Y or N",
+            default=False
+        )
+        if response:
             host.chat_enabled = True
             # Start chat thread now that chat is enabled
             start_chat_input_thread(host, "Host")
@@ -697,7 +820,7 @@ def run_interactive_host():
             print(f"[SYSTEM] Type '/endchat' to end the chat session.")
         
         # Wait for opponent's rematch response
-        timeout = time.time() + 30.0  # 30 second timeout
+        timeout = time.time() + 60.0  # 60 second timeout
         while host.opponent_wants_rematch is None and time.time() < timeout:
             try:
                 result = host.receive_message(timeout=0.5)
@@ -713,16 +836,139 @@ def run_interactive_host():
         # Check if both want rematch
         if wants_rematch and host.opponent_wants_rematch:
             print("\nBoth players want a rematch! Starting new battle...")
-            # Don't disconnect or generate report - we're continuing to a new battle
-            # The report will be generated when the final battle ends
-            run_interactive_host()
-            return
+            # Reset rematch flags for next battle
+            host.opponent_wants_rematch = None
+            # Restart battle loop without re-initializing connection
+            return run_host_battle_loop(host)
         elif not wants_rematch:
             print("\nYou declined the rematch. Thanks for playing!")
+            return False
         elif host.opponent_wants_rematch is None:
             print("\nTimeout waiting for opponent's response. Disconnecting...")
+            return False
         else:
             print("\nOpponent declined the rematch. Thanks for playing!")
+            return False
+    
+    return False
+
+
+def run_interactive_host():
+    """Run host with interactive prompts."""
+    global _should_generate_report, _host_peer_instance
+    
+    # Enable automatic bug report generation
+    _should_generate_report = True
+    
+    # Start live bug report
+    start_live_bug_report()
+    
+    # Register cleanup function to generate report on exit
+    atexit.register(_generate_auto_bug_report)
+    
+    print("\n" + "="*60)
+    print("  POKEPROTOCOL - HOST MODE")
+    print("="*60)
+    print("  (Live bug report is updating in real-time)")
+    print("  (Final bug report will be generated on exit)")
+    print("="*60)
+
+    # Get port with retry logic
+    port = None
+    host = None
+    while host is None:
+        port = get_user_input(
+            "Enter port to listen on",
+            "8888" if port is None else str(port),
+            validator_func=lambda x: validate_port(x)
+        )
+
+        try:
+            print(f"\nInitializing host on port {port}...")
+            host = HostPeer(port=port)
+            _host_peer_instance = host  # Store for cleanup
+            host.start_listening()
+        except OSError as e:
+            error_str = str(e)
+            if "Address already in use" in error_str or "10048" in error_str or "EADDRINUSE" in error_str or "WSAEADDRINUSE" in error_str:
+                print(f"\n✗ Port {port} is already in use!")
+                retry = get_validated_input(
+                    "Would you like to try a different port? (Y/N)",
+                    validate_yes_no,
+                    "Please enter Y or N"
+                )
+                if not retry:
+                    print("\nExiting...")
+                    return
+            else:
+                print(f"\n✗ Error initializing host: {e}")
+                retry = get_validated_input(
+                    "Would you like to try again? (Y/N)",
+                    validate_yes_no,
+                    "Please enter Y or N"
+                )
+                if not retry:
+                    print("\nExiting...")
+                    print("\nGenerating bug report...")
+                    _generate_auto_bug_report()
+                    return
+        except Exception as e:
+            print(f"\n✗ Unexpected error: {e}")
+            retry = get_validated_input(
+                "Would you like to try again? (Y/N)",
+                validate_yes_no,
+                "Please enter Y or N"
+            )
+            if not retry:
+                print("\nExiting...")
+                return
+
+    # Set up chat callback
+    def on_chat_received(sender_name, message_text):
+        # Only show chat messages if chat is enabled
+        if sender_name == "SYSTEM" or (hasattr(host, 'chat_enabled') and host.chat_enabled):
+            print(f"\n[CHAT] {sender_name}: {message_text}")
+    
+    host.on_chat_message = on_chat_received
+
+    # Don't start chat thread yet - it will be started only if chat is enabled
+    # This prevents stdin conflicts with other input operations
+    player_name = "Host"
+
+    # Wait for connection
+    print("\n" + "="*60)
+    print("  WAITING FOR JOINER TO CONNECT...")
+    print("="*60)
+    print(f"Tell the other player to connect to:")
+    print(f"  IP Address: <your_ip_address>")
+    print(f"  Port: {port}")
+    print("\nWaiting...")
+
+    timeout = time.time() + 120.0  # 120 second timeout
+    while not host.connected and time.time() < timeout:
+        result = host.receive_message(timeout=0.5)
+        if result:
+            msg, addr = result
+            host.handle_message(msg, addr)
+        host.process_reliability()
+
+    if not host.connected:
+        print("\nConnection timeout! No joiner connected.")
+        host.disconnect()
+        print("\nGenerating bug report...")
+        _generate_auto_bug_report()
+        return
+
+    print("\n✓ Joiner connected!")
+    
+    # Update live bug report after connection
+    update_live_bug_report_now()
+    
+    # Initialize battle count
+    host._battle_count = 0
+    
+    # Run battle loop (will handle rematches internally)
+    run_host_battle_loop(host)
 
     # Stop chat thread
     stop_chat_input_thread()
@@ -743,21 +989,18 @@ def run_interactive_joiner():
 
     # Get host IP and port
     host_ip = get_user_input("Enter host IP address", "127.0.0.1")
-    port_str = get_user_input("Enter host port", "8888")
-
-    try:
-        host_port = int(port_str)
-    except:
-        print("Invalid port, using 8888")
-        host_port = 8888
+    host_port = get_user_input(
+        "Enter host port",
+        "8888",
+        validator_func=lambda x: validate_port(x)
+    )
 
     # Get local port
-    local_port_str = get_user_input("Enter your local port", "8889")
-    try:
-        local_port = int(local_port_str)
-    except:
-        print("Invalid port, using 8889")
-        local_port = 8889
+    local_port = get_user_input(
+        "Enter your local port",
+        "8889",
+        validator_func=lambda x: validate_port(x)
+    )
 
     # Set up chat callback
     def on_chat_received(sender_name, message_text):
@@ -779,27 +1022,21 @@ def run_interactive_joiner():
             joiner.connect(host_ip, host_port)
             connected = True
             print("✓ Connected to host!")
-            
-            # Start chat input thread (but chat is disabled by default)
-            player_name = "Joiner"
-            start_chat_input_thread(joiner, player_name)
-            
-            # Pre-battle chat session
-            run_pre_battle_chat(joiner, "Joiner", "Host")
-            
-            # Disable chat before battle starts
-            joiner.chat_enabled = False
         except OSError as e:
             error_str = str(e)
             if "Address already in use" in error_str or "10048" in error_str or "EADDRINUSE" in error_str or "WSAEADDRINUSE" in error_str:
                 print(f"\n✗ Port {local_port} is already in use!")
-                retry = input("Would you like to try a different local port? (Y/N): ").strip().upper()
-                if retry == 'Y':
-                    local_port_str = get_user_input("Enter your local port", str(local_port))
-                    try:
-                        local_port = int(local_port_str)
-                    except:
-                        print(f"Invalid port, keeping {local_port}")
+                retry = get_validated_input(
+                    "Would you like to try a different local port? (Y/N)",
+                    validate_yes_no,
+                    "Please enter Y or N"
+                )
+                if retry:
+                    local_port = get_user_input(
+                        "Enter your local port",
+                        str(local_port),
+                        validator_func=lambda x: validate_port(x)
+                    )
                     # Clean up failed joiner
                     if joiner:
                         try:
@@ -811,8 +1048,12 @@ def run_interactive_joiner():
                     return
             else:
                 print(f"\n✗ Error initializing joiner: {e}")
-                retry = input("Would you like to try again? (Y/N): ").strip().upper()
-                if retry != 'Y':
+                retry = get_validated_input(
+                    "Would you like to try again? (Y/N)",
+                    validate_yes_no,
+                    "Please enter Y or N"
+                )
+                if not retry:
                     print("\nExiting...")
                     print("\nGenerating bug report...")
                     _generate_auto_bug_report()
@@ -870,6 +1111,33 @@ def run_interactive_joiner():
                 except:
                     pass
 
+    # Initialize battle count
+    joiner._battle_count = 0
+    
+    # Run battle loop (will handle rematches internally)
+    run_joiner_battle_loop(joiner)
+
+    # Stop chat thread
+    stop_chat_input_thread()
+    
+    print("\nDisconnecting...")
+    joiner.disconnect()
+
+
+def run_joiner_battle_loop(joiner):
+    """Run a single battle loop for the joiner. Can be called multiple times for rematches."""
+    # Pre-battle chat session (only on first battle)
+    if not hasattr(joiner, '_battle_count') or joiner._battle_count == 0:
+        run_pre_battle_chat(joiner, "Joiner", "Host")
+        joiner._battle_count = 0
+    
+    joiner._battle_count += 1
+    
+    # Disable chat before battle starts
+    joiner.chat_enabled = False
+    
+    # Stop chat thread before battle to prevent stdin conflicts
+    stop_chat_input_thread()
     # Clear input stream before battle to prevent leftover input
     clear_input_stream()
     
@@ -882,7 +1150,7 @@ def run_interactive_joiner():
 
     # Wait for opponent's Pokémon
     print("Waiting for opponent to select Pokémon...")
-    timeout = time.time() + 30.0
+    timeout = time.time() + 60.0
     while joiner.battle_state.state.value == "SETUP" and time.time() < timeout:
         result = joiner.receive_message(timeout=0.5)
         if result:
@@ -893,7 +1161,7 @@ def run_interactive_joiner():
 
     if joiner.battle_state.state.value == "SETUP":
         print("Timeout waiting for opponent's Pokémon")
-        return
+        return False
 
     # Battle loop
     print("\n" + "="*60)
@@ -921,7 +1189,7 @@ def run_interactive_joiner():
             print(f"{'='*60}")
             print(f"{status}")
 
-            move_name = select_move()
+            move_name = select_move(joiner.my_pokemon.pokemon.name if joiner.my_pokemon else None)
             move = move_db.get_move(move_name)
 
             if move and joiner.battle_state:
@@ -955,15 +1223,11 @@ def run_interactive_joiner():
         stop_chat_input_thread()
         
         # Prompt for new battle
-        wants_rematch = None
-        while wants_rematch is None:
-            response = input("\nStart a new battle? (Y/N): ").strip().upper()
-            if response == 'Y':
-                wants_rematch = True
-            elif response == 'N':
-                wants_rematch = False
-            else:
-                print("Please enter Y or N")
+        wants_rematch = get_validated_input(
+            "\nStart a new battle? (Y/N)",
+            validate_yes_no,
+            "Please enter Y or N"
+        )
         
         # Send rematch request to opponent
         from messages import RematchRequest
@@ -973,8 +1237,13 @@ def run_interactive_joiner():
         
         # Re-enable chat after battle (if players want to chat)
         print(f"\n[SYSTEM] Battle ended. Chat can be re-enabled.")
-        response = input("Do you want to enable chat? (Y/N, default: N): ").strip().upper()
-        if response == 'Y':
+        response = get_validated_input(
+            "Do you want to enable chat? (Y/N)",
+            validate_yes_no,
+            "Please enter Y or N",
+            default=False
+        )
+        if response:
             joiner.chat_enabled = True
             # Start chat thread now that chat is enabled
             start_chat_input_thread(joiner, "Joiner")
@@ -982,7 +1251,7 @@ def run_interactive_joiner():
             print(f"[SYSTEM] Type '/endchat' to end the chat session.")
         
         # Wait for opponent's rematch response
-        timeout = time.time() + 30.0  # 30 second timeout
+        timeout = time.time() + 60.0  # 60 second timeout
         while joiner.opponent_wants_rematch is None and time.time() < timeout:
             try:
                 result = joiner.receive_message(timeout=0.5)
@@ -998,21 +1267,21 @@ def run_interactive_joiner():
         # Check if both want rematch
         if wants_rematch and joiner.opponent_wants_rematch:
             print("\nBoth players want a rematch! Starting new battle...")
-            joiner.disconnect()
-            run_interactive_joiner()
-            return
+            # Reset rematch flags for next battle
+            joiner.opponent_wants_rematch = None
+            # Restart battle loop without re-initializing connection
+            return run_joiner_battle_loop(joiner)
         elif not wants_rematch:
             print("\nYou declined the rematch. Thanks for playing!")
+            return False
         elif joiner.opponent_wants_rematch is None:
             print("\nTimeout waiting for opponent's response. Disconnecting...")
+            return False
         else:
             print("\nOpponent declined the rematch. Thanks for playing!")
-
-    # Stop chat thread
-    stop_chat_input_thread()
+            return False
     
-    print("\nDisconnecting...")
-    joiner.disconnect()
+    return False
 
 
 def run_interactive_spectator():
@@ -1023,21 +1292,18 @@ def run_interactive_spectator():
 
     # Get host IP and port
     host_ip = get_user_input("Enter host IP address", "127.0.0.1")
-    port_str = get_user_input("Enter host port", "8888")
-
-    try:
-        host_port = int(port_str)
-    except:
-        print("Invalid port, using 8888")
-        host_port = 8888
+    host_port = get_user_input(
+        "Enter host port",
+        "8888",
+        validator_func=lambda x: validate_port(x)
+    )
 
     # Get local port
-    local_port_str = get_user_input("Enter your local port", "8890")
-    try:
-        local_port = int(local_port_str)
-    except:
-        print("Invalid port, using 8890")
-        local_port = 8890
+    local_port = get_user_input(
+        "Enter your local port",
+        "8890",
+        validator_func=lambda x: validate_port(x)
+    )
 
     # Retry loop for connection
     connected = False
@@ -1068,13 +1334,17 @@ def run_interactive_spectator():
             error_str = str(e)
             if "Address already in use" in error_str or "10048" in error_str or "EADDRINUSE" in error_str or "WSAEADDRINUSE" in error_str:
                 print(f"\n✗ Port {local_port} is already in use!")
-                retry = input("Would you like to try a different local port? (Y/N): ").strip().upper()
-                if retry == 'Y':
-                    local_port_str = get_user_input("Enter your local port", str(local_port))
-                    try:
-                        local_port = int(local_port_str)
-                    except:
-                        print(f"Invalid port, keeping {local_port}")
+                retry = get_validated_input(
+                    "Would you like to try a different local port? (Y/N)",
+                    validate_yes_no,
+                    "Please enter Y or N"
+                )
+                if retry:
+                    local_port = get_user_input(
+                        "Enter your local port",
+                        str(local_port),
+                        validator_func=lambda x: validate_port(x)
+                    )
                     # Clean up failed spectator
                     if spectator:
                         try:
@@ -1086,8 +1356,12 @@ def run_interactive_spectator():
                     return
             else:
                 print(f"\n✗ Error initializing spectator: {e}")
-                retry = input("Would you like to try again? (Y/N): ").strip().upper()
-                if retry != 'Y':
+                retry = get_validated_input(
+                    "Would you like to try again? (Y/N)",
+                    validate_yes_no,
+                    "Please enter Y or N"
+                )
+                if not retry:
                     print("\nExiting...")
                     print("\nGenerating bug report...")
                     _generate_auto_bug_report()
@@ -1162,7 +1436,7 @@ def run_interactive_spectator():
                 if spectator.game_over:
                     # Wait for rematch decisions
                     print("\nWaiting for players to decide on rematch...")
-                    timeout = time.time() + 30.0  # 30 second timeout
+                    timeout = time.time() + 60.0  # 60 second timeout
                     while (spectator.rematch_decisions["host"] is None or 
                            spectator.rematch_decisions["joiner"] is None) and time.time() < timeout:
                         result = spectator.receive_message(timeout=0.5)
@@ -1218,6 +1492,10 @@ def main():
     print("  POKEPROTOCOL - INTERACTIVE BATTLE CLIENT")
     print("="*60)
 
+    # Stop chat thread before menu to prevent stdin conflicts
+    stop_chat_input_thread()
+    clear_input_stream()
+    
     if len(sys.argv) > 1:
         mode = sys.argv[1].lower()
     else:
@@ -1226,13 +1504,17 @@ def main():
         print("2. Joiner - Connect to an existing battle")
         print("3. Spectator - Watch an ongoing battle")
 
-        choice = input("\nEnter choice (1-3): ").strip()
+        choice = get_validated_input(
+            "\nEnter choice (1-3)",
+            lambda x: validate_integer(x, min_val=1, max_val=3),
+            "Please enter a number between 1 and 3"
+        )
 
-        if choice == '1':
+        if choice == 1:
             mode = 'host'
-        elif choice == '2':
+        elif choice == 2:
             mode = 'joiner'
-        elif choice == '3':
+        elif choice == 3:
             mode = 'spectator'
         else:
             print("Invalid choice")

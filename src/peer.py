@@ -1025,6 +1025,8 @@ class HostPeer(BasePeer):
         battle_pokemon: Optional[BattlePokemon] = None
         
         if self.battle_state:
+            # Reset battle state for new battle (important for rematches)
+            self.battle_state.reset_for_new_battle()
             self.battle_state.set_pokemon(pokemon, special_attack_uses, special_defense_uses)
             battle_pokemon = self.battle_state.my_pokemon
         else:
@@ -1182,11 +1184,8 @@ class HostPeer(BasePeer):
         
         if self.battle_state:
             self.battle_state.advance_to_game_over()
-            print(f"\n" + "="*60)
-            print(f"  GAME OVER!")
-            print(f"  Winner: {message.winner}")
-            print(f"  Loser: {message.loser}")
-            print("="*60)
+            # Battle complete message is displayed by interactive_battle.py
+            # to avoid duplicate messages
     
     def _handle_rematch_request(self, message: Message):
         """Handle rematch request from opponent."""
@@ -1358,6 +1357,8 @@ class JoinerPeer(BasePeer):
         battle_pokemon: Optional[BattlePokemon] = None
         
         if self.battle_state:
+            # Reset battle state for new battle (important for rematches)
+            self.battle_state.reset_for_new_battle()
             self.battle_state.set_pokemon(pokemon, special_attack_uses, special_defense_uses)
             battle_pokemon = self.battle_state.my_pokemon
         else:
@@ -1606,11 +1607,8 @@ class JoinerPeer(BasePeer):
         """Handle game over."""
         if self.battle_state:
             self.battle_state.advance_to_game_over()
-            print(f"\n" + "="*60)
-            print(f"  GAME OVER!")
-            print(f"  Winner: {message.winner}")
-            print(f"  Loser: {message.loser}")
-            print("="*60)
+            # Battle complete message is displayed by interactive_battle.py
+            # to avoid duplicate messages
     
     def _handle_rematch_request(self, message: Message):
         """Handle rematch request from opponent."""

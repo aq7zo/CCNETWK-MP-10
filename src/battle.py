@@ -152,6 +152,21 @@ class BattleStateMachine:
         self.opponent_calculation: Optional[Dict] = None
         self.calculation_confirmed = False
     
+    def reset_for_new_battle(self):
+        """
+        Reset battle state machine for a new battle.
+        Clears all battle state and resets to SETUP.
+        """
+        self.state = BattleState.SETUP
+        self.my_pokemon = None
+        self.opponent_pokemon = None
+        self.my_turn = self.is_host  # Host goes first
+        self.last_move = None
+        self.last_attacker = None
+        self.my_calculation = None
+        self.opponent_calculation = None
+        self.calculation_confirmed = False
+    
     def set_pokemon(self, pokemon: Pokemon, special_attack_uses: int = 5,
                    special_defense_uses: int = 5):
         """
