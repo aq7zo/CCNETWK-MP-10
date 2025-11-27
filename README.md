@@ -100,29 +100,6 @@ python scripts/example_battle.py moves     # List available moves
 6. Damage is calculated synchronously on both sides
 7. Battle continues until one Pokémon faints (HP ≤ 0)
 
-## Debugging Battle Issues
-
-If you experience battle hanging or other issues, use the **debug-enabled battle script**:
-
-**Terminal 1 (Host):**
-```bash
-python scripts/debug_battle.py host
-```
-
-**Terminal 2 (Joiner):**
-```bash
-python scripts/debug_battle.py joiner
-```
-
-This will:
-- Log all messages sent/received
-- Track state transitions
-- Generate a detailed bug report at the end
-- Help identify where the battle is getting stuck
-
-Bug reports are saved as JSON files (e.g., `bug_report_host_1234567890.json`) and can be analyzed to diagnose issues.
-
-See `docs/DEBUG_SYSTEM.md` for detailed documentation on the debug system.
 
 ## Troubleshooting
 
@@ -141,9 +118,9 @@ See `docs/DEBUG_SYSTEM.md` for detailed documentation on the debug system.
 - Pokémon names are case-sensitive (e.g., "Pikachu" not "pikachu")
 
 ### Battle Hanging
-- Use the debug script (`debug_battle.py`) to generate a bug report
-- Check the bug report for missing messages or stuck states
-- See `docs/DEBUG_SYSTEM.md` for analysis guide
+- Check that both peers are running and connected
+- Verify network connectivity and firewall settings
+- Ensure both players have selected their Pokémon
 
 ## Project Structure
 

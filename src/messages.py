@@ -229,7 +229,7 @@ class BattleSetup(Message):
                 f"communication_mode: {self.communication_mode}\n"
                 f"pokemon_name: {self.pokemon_name}\n"
                 f"stat_boosts: {boosts_str}\n"
-                f"pokemon_data: {pokemon_data_str}\n"
+                f"pokemon: {pokemon_data_str}\n"
                 f"sequence_number: {self.sequence_number}\n").encode('utf-8')
 
     @staticmethod
@@ -240,7 +240,8 @@ class BattleSetup(Message):
         stat_boosts_str = fields.get('stat_boosts', '{}')
         stat_boosts = json.loads(stat_boosts_str)
         sequence_number = int(fields.get('sequence_number', 0))
-        pokemon_data_str = fields.get('pokemon_data', '{}')
+        # RFC uses "pokemon:" but support both for backward compatibility
+        pokemon_data_str = fields.get('pokemon', fields.get('pokemon_data', '{}'))
         pokemon_data = json.loads(pokemon_data_str) if pokemon_data_str != '{}' else None
         return BattleSetup(communication_mode, pokemon_name, stat_boosts, sequence_number, pokemon_data)
 

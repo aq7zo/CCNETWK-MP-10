@@ -1,0 +1,728 @@
+================================================================================
+POKEPROTOCOL COMPREHENSIVE BUG REPORT
+================================================================================
+Generated: 2025-11-27T14:17:59.812399
+
+EXECUTIVE SUMMARY
+--------------------------------------------------------------------------------
+Total Peers Monitored: 1
+Total Events Logged: 86
+Total Errors: 0
+Total Warnings: 0
+
+[OK] No errors detected
+[OK] No warnings detected
+Total Runtime: 103.46 seconds
+
+PEER OVERVIEW
+--------------------------------------------------------------------------------
+
+HostPeer (Port 8888):
+  Total Events: 86
+  Messages Sent: 43
+  Messages Received: 37
+  Errors: 0
+  Warnings: 0
+  Connections: 0
+  Disconnections: 1
+  Runtime: 103.46 seconds
+
+CONNECTION ANALYSIS
+--------------------------------------------------------------------------------
+Total Connections: 0
+Total Disconnections: 1
+
+Disconnections:
+  - 10.10.243.246:8889
+
+WARNING: No connections detected!
+
+MESSAGE FLOW ANALYSIS
+--------------------------------------------------------------------------------
+Unique Message Types: 11
+Total Messages: 80
+
+Message Breakdown:
+  RECEIVED_ACK: 20
+  RECEIVED_BATTLE_SETUP: 4
+  RECEIVED_CALCULATION_REPORT: 1
+  RECEIVED_CHAT_MESSAGE: 7
+  RECEIVED_DEFENSE_ANNOUNCE: 1
+  RECEIVED_GAME_OVER: 1
+  RECEIVED_HANDSHAKE_REQUEST: 1
+  RECEIVED_REMATCH_REQUEST: 1
+  RECEIVED_SPECTATOR_REQUEST: 1
+  SENT_ACK: 17
+  SENT_ATTACK_ANNOUNCE: 1
+  SENT_BATTLE_SETUP: 3
+  SENT_CALCULATION_REPORT: 3
+  SENT_CHAT_MESSAGE: 10
+  SENT_DEFENSE_ANNOUNCE: 1
+  SENT_GAME_OVER: 3
+  SENT_HANDSHAKE_RESPONSE: 2
+  SENT_REMATCH_REQUEST: 3
+
+WARNING: CHAT_MESSAGE count mismatch (sent: 10, received: 7)
+
+WARNING: ATTACK_ANNOUNCE sent but never received
+
+ERROR ANALYSIS
+--------------------------------------------------------------------------------
+[OK] No errors detected
+
+WARNING ANALYSIS
+--------------------------------------------------------------------------------
+[OK] No warnings detected
+
+BATTLE STATE ANALYSIS
+--------------------------------------------------------------------------------
+No battle state changes detected
+
+TIMING ANALYSIS
+--------------------------------------------------------------------------------
+Total Timeouts: 0
+Total Retransmissions: 0
+
+NETWORK ANALYSIS
+--------------------------------------------------------------------------------
+
+CHAT ANALYSIS
+--------------------------------------------------------------------------------
+Total Chat Messages: 4
+
+Chat Message Timeline:
+  [2025-11-27T14:16:51.504210] RECEIVED - Joiner: ready?
+  [2025-11-27T14:16:55.469913] RECEIVED - Spectator: yes
+  [2025-11-27T14:17:02.568828] RECEIVED - Spectator: lets start
+  [2025-11-27T14:17:43.840224] RECEIVED - SYSTEM: Joiner ended chat session
+
+SPECTATOR ANALYSIS
+--------------------------------------------------------------------------------
+Total Spectator Joins: 1
+
+Spectator Join Timeline:
+  [2025-11-27T14:16:29.823814] Spectator joined from 10.10.243.246:8890
+    Address: 10.10.243.246:8890
+
+RECOMMENDATIONS
+--------------------------------------------------------------------------------
+[OK] No critical issues detected
+System appears to be functioning normally
+
+DETAILED EVENT LOG
+--------------------------------------------------------------------------------
+(Chronological order across all peers)
+
+Total Events: 86
+
+[2025-11-27T14:16:29.823739] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received SPECTATOR_REQUEST
+  Data: {
+    "message_type": "SPECTATOR_REQUEST",
+    "source_address": "10.10.243.246",
+    "source_port": 8890,
+    "sequence_number": 2
+}
+[2025-11-27T14:16:29.823803] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 1
+}
+[2025-11-27T14:16:29.823814] HostPeer (Port 8888) - SPECTATOR_JOIN: Spectator joined from 10.10.243.246:8890
+  Data: {
+    "address": "10.10.243.246",
+    "port": 8890
+}
+[2025-11-27T14:16:29.823837] HostPeer (Port 8888) - MESSAGE_SENT: Sent HANDSHAKE_RESPONSE
+  Data: {
+    "message_type": "HANDSHAKE_RESPONSE",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 3
+}
+[2025-11-27T14:16:29.823974] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8890
+}
+[2025-11-27T14:16:38.725731] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received HANDSHAKE_REQUEST
+  Data: {
+    "message_type": "HANDSHAKE_REQUEST",
+    "source_address": "10.10.243.246",
+    "source_port": 8889,
+    "sequence_number": 1
+}
+[2025-11-27T14:16:38.725791] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 4
+}
+[2025-11-27T14:16:38.725842] HostPeer (Port 8888) - MESSAGE_SENT: Sent HANDSHAKE_RESPONSE
+  Data: {
+    "message_type": "HANDSHAKE_RESPONSE",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 5
+}
+[2025-11-27T14:16:44.046605] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8889
+}
+[2025-11-27T14:16:47.471775] HostPeer (Port 8888) - MESSAGE_SENT: Sent CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 7,
+    "sender_name": "Host"
+}
+[2025-11-27T14:16:47.471815] HostPeer (Port 8888) - MESSAGE_SENT: Sent CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 9,
+    "sender_name": "Host"
+}
+[2025-11-27T14:16:47.472440] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8889
+}
+[2025-11-27T14:16:47.572740] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8890
+}
+[2025-11-27T14:16:51.504131] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "source_address": "10.10.243.246",
+    "source_port": 8889,
+    "sequence_number": 5,
+    "sender_name": "Joiner"
+}
+[2025-11-27T14:16:51.504198] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 10
+}
+[2025-11-27T14:16:51.504210] HostPeer (Port 8888) - CHAT_MESSAGE: Chat RECEIVED: Joiner: ready?
+  Data: {
+    "sender": "Joiner",
+    "message": "ready?",
+    "direction": "RECEIVED"
+}
+[2025-11-27T14:16:51.504489] HostPeer (Port 8888) - MESSAGE_SENT: Sent CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 12,
+    "sender_name": "Joiner"
+}
+[2025-11-27T14:16:51.604916] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8890
+}
+[2025-11-27T14:16:55.469860] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "source_address": "10.10.243.246",
+    "source_port": 8890,
+    "sequence_number": 7,
+    "sender_name": "Spectator"
+}
+[2025-11-27T14:16:55.469903] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 13
+}
+[2025-11-27T14:16:55.469913] HostPeer (Port 8888) - CHAT_MESSAGE: Chat RECEIVED: Spectator: yes
+  Data: {
+    "sender": "Spectator",
+    "message": "yes",
+    "direction": "RECEIVED"
+}
+[2025-11-27T14:16:55.470780] HostPeer (Port 8888) - MESSAGE_SENT: Sent CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 15,
+    "sender_name": "Spectator"
+}
+[2025-11-27T14:16:55.571192] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8889
+}
+[2025-11-27T14:17:02.568767] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "source_address": "10.10.243.246",
+    "source_port": 8890,
+    "sequence_number": 9,
+    "sender_name": "Spectator"
+}
+[2025-11-27T14:17:02.568819] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 16
+}
+[2025-11-27T14:17:02.568828] HostPeer (Port 8888) - CHAT_MESSAGE: Chat RECEIVED: Spectator: lets start
+  Data: {
+    "sender": "Spectator",
+    "message": "lets start",
+    "direction": "RECEIVED"
+}
+[2025-11-27T14:17:02.569738] HostPeer (Port 8888) - MESSAGE_SENT: Sent CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 18,
+    "sender_name": "Spectator"
+}
+[2025-11-27T14:17:02.670739] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8889
+}
+[2025-11-27T14:17:06.771348] HostPeer (Port 8888) - MESSAGE_SENT: Sent CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 20,
+    "sender_name": "Host"
+}
+[2025-11-27T14:17:06.771383] HostPeer (Port 8888) - MESSAGE_SENT: Sent CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 22,
+    "sender_name": "Host"
+}
+[2025-11-27T14:17:06.771479] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8889
+}
+[2025-11-27T14:17:06.871753] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8890
+}
+[2025-11-27T14:17:08.911277] HostPeer (Port 8888) - MESSAGE_SENT: Sent CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 24,
+    "sender_name": "SYSTEM"
+}
+[2025-11-27T14:17:08.911313] HostPeer (Port 8888) - MESSAGE_SENT: Sent CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 26,
+    "sender_name": "SYSTEM"
+}
+[2025-11-27T14:17:08.911500] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8889
+}
+[2025-11-27T14:17:43.739347] HostPeer (Port 8888) - MESSAGE_SENT: Sent BATTLE_SETUP
+  Data: {
+    "message_type": "BATTLE_SETUP",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 27,
+    "pokemon_name": "Fearow"
+}
+[2025-11-27T14:17:43.739397] HostPeer (Port 8888) - MESSAGE_SENT: Sent BATTLE_SETUP
+  Data: {
+    "message_type": "BATTLE_SETUP",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 28,
+    "pokemon_name": "Fearow"
+}
+[2025-11-27T14:17:43.739674] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8890
+}
+[2025-11-27T14:17:43.840154] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "source_address": "10.10.243.246",
+    "source_port": 8889,
+    "sequence_number": 11,
+    "sender_name": "SYSTEM"
+}
+[2025-11-27T14:17:43.840215] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 29
+}
+[2025-11-27T14:17:43.840224] HostPeer (Port 8888) - CHAT_MESSAGE: Chat RECEIVED: SYSTEM: Joiner ended chat session
+  Data: {
+    "sender": "SYSTEM",
+    "message": "Joiner ended chat session",
+    "direction": "RECEIVED"
+}
+[2025-11-27T14:17:43.840382] HostPeer (Port 8888) - MESSAGE_SENT: Sent CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 31,
+    "sender_name": "SYSTEM"
+}
+[2025-11-27T14:17:43.940838] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received BATTLE_SETUP
+  Data: {
+    "message_type": "BATTLE_SETUP",
+    "source_address": "10.10.243.246",
+    "source_port": 8889,
+    "sequence_number": 12,
+    "pokemon_name": "Spearow"
+}
+[2025-11-27T14:17:43.940889] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 32
+}
+[2025-11-27T14:17:43.941188] HostPeer (Port 8888) - MESSAGE_SENT: Sent BATTLE_SETUP
+  Data: {
+    "message_type": "BATTLE_SETUP",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 33,
+    "pokemon_name": "Spearow"
+}
+[2025-11-27T14:17:44.041959] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "source_address": "10.10.243.246",
+    "source_port": 8889,
+    "sequence_number": 11,
+    "sender_name": "SYSTEM"
+}
+[2025-11-27T14:17:44.042022] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 34
+}
+[2025-11-27T14:17:46.956609] HostPeer (Port 8888) - MESSAGE_SENT: Sent ATTACK_ANNOUNCE
+  Data: {
+    "message_type": "ATTACK_ANNOUNCE",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 36,
+    "move_name": "Flame Thrower"
+}
+[2025-11-27T14:17:47.057400] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received BATTLE_SETUP
+  Data: {
+    "message_type": "BATTLE_SETUP",
+    "source_address": "10.10.243.246",
+    "source_port": 8889,
+    "sequence_number": 12,
+    "pokemon_name": "Spearow"
+}
+[2025-11-27T14:17:47.057461] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 37
+}
+[2025-11-27T14:17:47.158095] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "source_address": "10.10.243.246",
+    "source_port": 8889,
+    "sequence_number": 11,
+    "sender_name": "SYSTEM"
+}
+[2025-11-27T14:17:47.158152] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 38
+}
+[2025-11-27T14:17:47.258694] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received BATTLE_SETUP
+  Data: {
+    "message_type": "BATTLE_SETUP",
+    "source_address": "10.10.243.246",
+    "source_port": 8889,
+    "sequence_number": 12,
+    "pokemon_name": "Spearow"
+}
+[2025-11-27T14:17:47.258757] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 39
+}
+[2025-11-27T14:17:47.359189] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received CHAT_MESSAGE
+  Data: {
+    "message_type": "CHAT_MESSAGE",
+    "source_address": "10.10.243.246",
+    "source_port": 8889,
+    "sequence_number": 11,
+    "sender_name": "SYSTEM"
+}
+[2025-11-27T14:17:47.359249] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 40
+}
+[2025-11-27T14:17:47.459462] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received BATTLE_SETUP
+  Data: {
+    "message_type": "BATTLE_SETUP",
+    "source_address": "10.10.243.246",
+    "source_port": 8889,
+    "sequence_number": 12,
+    "pokemon_name": "Spearow"
+}
+[2025-11-27T14:17:47.459529] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 41
+}
+[2025-11-27T14:17:47.559814] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8890
+}
+[2025-11-27T14:17:47.660077] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8889
+}
+[2025-11-27T14:17:47.760707] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8890
+}
+[2025-11-27T14:17:47.860856] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8890
+}
+[2025-11-27T14:17:47.961009] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8889
+}
+[2025-11-27T14:17:48.061260] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received DEFENSE_ANNOUNCE
+  Data: {
+    "message_type": "DEFENSE_ANNOUNCE",
+    "source_address": "10.10.243.246",
+    "source_port": 8889,
+    "sequence_number": 16
+}
+[2025-11-27T14:17:48.061316] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 42
+}
+[2025-11-27T14:17:48.061353] HostPeer (Port 8888) - MESSAGE_SENT: Sent DEFENSE_ANNOUNCE
+  Data: {
+    "message_type": "DEFENSE_ANNOUNCE",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 43
+}
+[2025-11-27T14:17:48.062052] HostPeer (Port 8888) - MESSAGE_SENT: Sent GAME_OVER
+  Data: {
+    "message_type": "GAME_OVER",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 45,
+    "winner": "Fearow",
+    "loser": "Spearow"
+}
+[2025-11-27T14:17:48.062069] HostPeer (Port 8888) - MESSAGE_SENT: Sent GAME_OVER
+  Data: {
+    "message_type": "GAME_OVER",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 46,
+    "winner": "Fearow",
+    "loser": "Spearow"
+}
+[2025-11-27T14:17:48.062087] HostPeer (Port 8888) - MESSAGE_SENT: Sent CALCULATION_REPORT
+  Data: {
+    "message_type": "CALCULATION_REPORT",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 48
+}
+[2025-11-27T14:17:48.062097] HostPeer (Port 8888) - MESSAGE_SENT: Sent CALCULATION_REPORT
+  Data: {
+    "message_type": "CALCULATION_REPORT",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 49
+}
+[2025-11-27T14:17:52.084314] HostPeer (Port 8888) - MESSAGE_SENT: Sent REMATCH_REQUEST
+  Data: {
+    "message_type": "REMATCH_REQUEST",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 51
+}
+[2025-11-27T14:17:52.084351] HostPeer (Port 8888) - MESSAGE_SENT: Sent REMATCH_REQUEST
+  Data: {
+    "message_type": "REMATCH_REQUEST",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 52
+}
+[2025-11-27T14:17:59.063218] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received GAME_OVER
+  Data: {
+    "message_type": "GAME_OVER",
+    "source_address": "10.10.243.246",
+    "source_port": 8889,
+    "sequence_number": 18,
+    "winner": "Fearow",
+    "loser": "Spearow"
+}
+[2025-11-27T14:17:59.063277] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 53
+}
+[2025-11-27T14:17:59.063345] HostPeer (Port 8888) - MESSAGE_SENT: Sent GAME_OVER
+  Data: {
+    "message_type": "GAME_OVER",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 54,
+    "winner": "Fearow",
+    "loser": "Spearow"
+}
+[2025-11-27T14:17:59.164726] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received CALCULATION_REPORT
+  Data: {
+    "message_type": "CALCULATION_REPORT",
+    "source_address": "10.10.243.246",
+    "source_port": 8889,
+    "sequence_number": 20
+}
+[2025-11-27T14:17:59.164814] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 55
+}
+[2025-11-27T14:17:59.164846] HostPeer (Port 8888) - MESSAGE_SENT: Sent CALCULATION_REPORT
+  Data: {
+    "message_type": "CALCULATION_REPORT",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 56
+}
+[2025-11-27T14:17:59.265306] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8890
+}
+[2025-11-27T14:17:59.365607] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8890
+}
+[2025-11-27T14:17:59.466050] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8890
+}
+[2025-11-27T14:17:59.566239] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received ACK
+  Data: {
+    "message_type": "ACK",
+    "source_address": "10.10.243.246",
+    "source_port": 8890
+}
+[2025-11-27T14:17:59.666628] HostPeer (Port 8888) - MESSAGE_RECEIVED: Received REMATCH_REQUEST
+  Data: {
+    "message_type": "REMATCH_REQUEST",
+    "source_address": "10.10.243.246",
+    "source_port": 8889,
+    "sequence_number": 22
+}
+[2025-11-27T14:17:59.666722] HostPeer (Port 8888) - MESSAGE_SENT: Sent ACK
+  Data: {
+    "message_type": "ACK",
+    "target_address": "10.10.243.246",
+    "target_port": 8889,
+    "sequence_number": 57
+}
+[2025-11-27T14:17:59.666755] HostPeer (Port 8888) - MESSAGE_SENT: Sent REMATCH_REQUEST
+  Data: {
+    "message_type": "REMATCH_REQUEST",
+    "target_address": "10.10.243.246",
+    "target_port": 8890,
+    "sequence_number": 58
+}
+[2025-11-27T14:17:59.771220] HostPeer (Port 8888) - DISCONNECTION: Disconnected
+  Data: {
+    "address": "10.10.243.246",
+    "port": 8889
+}
+
+================================================================================
+END OF REPORT
+================================================================================
