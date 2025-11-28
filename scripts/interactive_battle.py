@@ -691,7 +691,6 @@ def check_chat_input(prompt="Type 'chat' to send a message, or press Enter to co
     except (EOFError, KeyboardInterrupt):
         return None
 
-
 def run_host_battle_loop(host):
     """Run a single battle loop for the host. Can be called multiple times for rematches."""
     # Pre-battle chat session (only on first battle)
@@ -879,17 +878,50 @@ def run_host_battle_loop(host):
             # Restart battle loop without re-initializing connection
             return run_host_battle_loop(host)
         elif not wants_rematch:
-            print("\nYou declined the rematch. Thanks for playing!")
+            print("\nYou declined the rematch.")
+            # If chat is enabled, keep the session alive
+            if host.chat_enabled:
+                print("Chat session is active. Type '/endchat' to end the session and disconnect.")
+                # Keep processing messages while chat is active
+                while host.chat_enabled:
+                    try:
+                        result = host.receive_message(timeout=0.5)
+                        if result:
+                            msg, addr = result
+                            host.handle_message(msg, addr)
+                        host.process_reliability()
+                        time.sleep(0.1)
+                    except (EOFError, KeyboardInterrupt):
+                        break
+                print("\nChat session ended. Thanks for playing!")
+            else:
+                print("Thanks for playing!")
             return False
         elif host.opponent_wants_rematch is None:
             print("\nTimeout waiting for opponent's response. Disconnecting...")
             return False
         else:
-            print("\nOpponent declined the rematch. Thanks for playing!")
+            print("\nOpponent declined the rematch.")
+            # If chat is enabled, keep the session alive
+            if host.chat_enabled:
+                print("Chat session is active. Type '/endchat' to end the session and disconnect.")
+                # Keep processing messages while chat is active
+                while host.chat_enabled:
+                    try:
+                        result = host.receive_message(timeout=0.5)
+                        if result:
+                            msg, addr = result
+                            host.handle_message(msg, addr)
+                        host.process_reliability()
+                        time.sleep(0.1)
+                    except (EOFError, KeyboardInterrupt):
+                        break
+                print("\nChat session ended. Thanks for playing!")
+            else:
+                print("Thanks for playing!")
             return False
     
     return False
-
 
 def run_interactive_host():
     """Run host with interactive prompts."""
@@ -1348,13 +1380,47 @@ def run_joiner_battle_loop(joiner):
             # Restart battle loop without re-initializing connection
             return run_joiner_battle_loop(joiner)
         elif not wants_rematch:
-            print("\nYou declined the rematch. Thanks for playing!")
+            print("\nYou declined the rematch.")
+            # If chat is enabled, keep the session alive
+            if joiner.chat_enabled:
+                print("Chat session is active. Type '/endchat' to end the session and disconnect.")
+                # Keep processing messages while chat is active
+                while joiner.chat_enabled:
+                    try:
+                        result = joiner.receive_message(timeout=0.5)
+                        if result:
+                            msg, addr = result
+                            joiner.handle_message(msg, addr)
+                        joiner.process_reliability()
+                        time.sleep(0.1)
+                    except (EOFError, KeyboardInterrupt):
+                        break
+                print("\nChat session ended. Thanks for playing!")
+            else:
+                print("Thanks for playing!")
             return False
         elif joiner.opponent_wants_rematch is None:
             print("\nTimeout waiting for opponent's response. Disconnecting...")
             return False
         else:
-            print("\nOpponent declined the rematch. Thanks for playing!")
+            print("\nOpponent declined the rematch.")
+            # If chat is enabled, keep the session alive
+            if joiner.chat_enabled:
+                print("Chat session is active. Type '/endchat' to end the session and disconnect.")
+                # Keep processing messages while chat is active
+                while joiner.chat_enabled:
+                    try:
+                        result = joiner.receive_message(timeout=0.5)
+                        if result:
+                            msg, addr = result
+                            joiner.handle_message(msg, addr)
+                        joiner.process_reliability()
+                        time.sleep(0.1)
+                    except (EOFError, KeyboardInterrupt):
+                        break
+                print("\nChat session ended. Thanks for playing!")
+            else:
+                print("Thanks for playing!")
             return False
     
     return False
