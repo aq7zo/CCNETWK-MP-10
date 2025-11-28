@@ -664,11 +664,17 @@ def stop_chat_input_thread():
     """Stop the background chat input thread."""
     global _chat_thread_active, _chat_thread
     _chat_thread_active = False
-    # Give the thread a moment to exit (it's waiting on input() which will raise EOFError)
     if _chat_thread and _chat_thread.is_alive():
-        # Small delay to allow thread to exit gracefully
-        import time
-        time.sleep(0.1)
+        # input() blocks forever on Windows; inject KeyboardInterrupt so it unwinds immediately
+        try:
+            import ctypes
+            res = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(_chat_thread.ident), ctypes.py_object(KeyboardInterrupt))
+            if res > 1:
+                ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(_chat_thread.ident), 0)
+        except Exception:
+            pass
+        _chat_thread.join(timeout=0.5)
+        _chat_thread = None
 
 
 def check_chat_input(prompt="Type 'chat' to send a message, or press Enter to continue: "):
