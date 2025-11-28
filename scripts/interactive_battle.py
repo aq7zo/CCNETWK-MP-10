@@ -550,27 +550,27 @@ def _chat_input_thread(peer, player_name):
             if user_input.lower() == '/endchat':
                 if hasattr(peer, 'chat_enabled') and peer.chat_enabled:
                     peer.chat_enabled = False
+                    
                     # Notify other players
                     if hasattr(peer, 'send_chat_state_notification'):
                         peer.send_chat_state_notification(player_name, "ended chat session")
+                    
                     print(f"\n[SYSTEM] You ended the chat session.")
-                    # Clear input stream to prevent leftover input from interfering with battle
-                    # Call multiple times to ensure buffer is fully cleared
-                    clear_input_stream()
-                    time.sleep(0.1)  # Small delay to allow buffer to settle
-                    clear_input_stream()  # Clear again after delay
-                    sys.stdout.flush()  # Ensure output is flushed
+                    
+                    # === FIX: BREAK THE LOOP IMMEDIATELY ===
+                    # Do NOT use 'continue' here. We must stop this thread 
+                    # so it stops listening for input immediately.
+                    _chat_thread_active = False
+                    break 
+                    # =======================================
                 else:
                     print(f"\n[SYSTEM] Chat is already disabled.")
-                    # Still clear buffer even if chat wasn't enabled
-                    clear_input_stream()
-                continue
+                    continue
             
             # Check for /chat command
             if user_input.startswith('/chat '):
                 message = user_input[6:].strip()  # Remove '/chat ' prefix
                 if message:
-                    # Check if chat is enabled
                     if hasattr(peer, 'chat_enabled') and not peer.chat_enabled:
                         print(f"\n[SYSTEM] Chat is disabled. Type '/startchat' to enable chat.")
                         continue
@@ -583,7 +583,6 @@ def _chat_input_thread(peer, player_name):
                 # Handle /chat without space
                 message = user_input[5:].strip()
                 if message:
-                    # Check if chat is enabled
                     if hasattr(peer, 'chat_enabled') and not peer.chat_enabled:
                         print(f"\n[SYSTEM] Chat is disabled. Type '/startchat' to enable chat.")
                         continue
@@ -702,8 +701,24 @@ def run_host_battle_loop(host):
     # Pre-battle chat session (only on first battle)
     if not hasattr(host, '_battle_count') or host._battle_count == 0:
         run_pre_battle_chat(host, "Host", "Joiner")
+
+        # === FIX: Auto-transition logic ===
+        # 1. Force the chat thread to stop immediately so it releases the keyboard
+        stop_chat_input_thread()
+        
+        # 2. Add a tiny delay (0.2s) to ensure the "[SYSTEM] Chat session ended" 
+        # message prints fully before the menu appears.
+        time.sleep(0.2)
+        
+        # 3. Clear the 'Enter' key stroke from the buffer so it doesn't 
+        # accidentally select an empty Pokémon name.
+        clear_input_stream()
+        
+        # 4. Print some newlines for visual separation
+        print("\n" * 2)
+
         host._battle_count = 0
-    
+
     host._battle_count += 1
     
     # Disable chat before battle starts
@@ -1205,6 +1220,14 @@ def run_joiner_battle_loop(joiner):
     # Pre-battle chat session (only on first battle)
     if not hasattr(joiner, '_battle_count') or joiner._battle_count == 0:
         run_pre_battle_chat(joiner, "Joiner", "Host")
+
+        # === FIX: Auto-transition logic ===
+        stop_chat_input_thread()
+        time.sleep(0.2)
+        clear_input_stream()
+        print("\n" * 2)
+
+
         joiner._battle_count = 0
     
     joiner._battle_count += 1
